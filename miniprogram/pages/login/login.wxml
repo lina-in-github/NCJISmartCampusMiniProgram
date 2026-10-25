@@ -1,0 +1,71 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{s.title}}</view>
+      <view class="topbar-sub">{{modeText}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onToggleTheme">◐</view>
+      <view class="icon-btn" bindtap="onSettings">{{s.settings}}</view>
+    </view>
+  </view>
+
+  <view class="hero">
+    <view class="hero-eyebrow">{{s.tagline}}</view>
+    <view class="hero-title">{{s.welcome}}</view>
+    <view class="hero-desc">{{s.welcomeDesc}}</view>
+    <view class="hero-actions">
+      <view class="btn light" wx:if="{{current}}" bindtap="onContinue">{{s.continueEnter}}</view>
+      <view class="btn glass" wx:if="{{current}}" bindtap="onSwitchIdentity">{{s.switchIdentity}}</view>
+      <view class="btn glass" bindtap="onAccount">{{s.account}}</view>
+    </view>
+  </view>
+
+  <view class="notice" wx:if="{{current}}">
+    <view class="mono">{{current.key}}</view>
+    <view class="muted mt-sm">{{s.keyOnly}}</view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">{{s.choose}}</view>
+    </view>
+    <view class="list">
+      <view
+        class="row"
+        wx:for="{{cards}}"
+        wx:key="role"
+        data-role="{{item.role}}"
+        bindtap="onPickRole"
+      >
+        <view class="row-head">
+          <view class="row-title">{{item.title}}</view>
+          <view class="chip">{{item.label}}</view>
+        </view>
+        <view class="row-desc">{{item.desc}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">{{s.demoSummary}}</view>
+    </view>
+    <view class="list">
+      <view class="row" wx:for="{{demo}}" wx:key="key">
+        <view class="row-head">
+          <view class="row-sub">{{item.label}}</view>
+        </view>
+        <view class="mono accent-text">{{item.key}}</view>
+      </view>
+    </view>
+    <view class="hint">{{s.footer}}</view>
+  </view>
+
+  <view class="card">
+    <view class="flex-between">
+      <view class="muted">{{s.accountCenter}}</view>
+      <view class="btn small ghost" bindtap="onAccount">{{s.account}}</view>
+    </view>
+  </view>
+</view>

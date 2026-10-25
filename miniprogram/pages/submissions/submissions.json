@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "班级征集",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "bottom-nav": "/components/bottom-nav/index"
+  }
+}

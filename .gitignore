@@ -8,3 +8,6 @@
 /sc-test.db*
 /smartcampus.log
 /strings.db
+/project.private.config.json
+/miniprogram/node_modules
+/miniprogram/.DS_Store

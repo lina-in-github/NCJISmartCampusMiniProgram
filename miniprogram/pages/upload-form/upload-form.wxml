@@ -1,0 +1,140 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{submission.name || s.titleLabel}}</view>
+      <view class="topbar-sub">{{submission.typeText}} · {{submission.deadlineText}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onBackSubmission">{{s.back}}</view>
+    </view>
+  </view>
+
+  <view class="notice danger" wx:if="{{error}}">{{error}}</view>
+  <view class="muted" wx:if="{{loading}}">…</view>
+
+  <block wx:if="{{!loading && submission}}">
+    <view class="card" wx:if="{{isForm}}">
+      <view class="flex-between">
+        <view class="section-title">{{submission.isAnswerSheet ? s.submitAnswerSheet : s.submitSurvey}}</view>
+        <view class="chip" wx:if="{{isAnswerSheet}}">{{s.allRequired}}</view>
+      </view>
+      <view class="hint">{{isAnswerSheet ? s.answerSheetTip : s.surveyTip}}</view>
+
+      <view class="empty" wx:if="{{!hasFields}}">
+        <view class="empty-desc">{{isAnswerSheet ? s.noFieldsSheet : s.noFields}}</view>
+      </view>
+
+      <view class="mt-md">
+        <block wx:for="{{blocks}}" wx:key="key">
+          <view class="survey-text" wx:if="{{item.kind === 'text'}}">{{item.text}}</view>
+
+          <view class="survey-field" wx:else>
+            <view class="label" wx:if="{{item.showLabel && item.field.label}}">
+              {{item.field.label}}<text class="req" wx:if="{{item.field.required}}">*</text>
+            </view>
+            <view class="label" wx:elif="{{item.groupCaption}}">
+              {{item.groupCaption}}<text class="req" wx:if="{{item.field.required}}">*</text>
+            </view>
+
+            <input
+              wx:if="{{item.field.kind === 'input'}}"
+              class="input"
+              type="{{item.field.inputType === 'number' ? 'number' : 'text'}}"
+              placeholder="{{item.field.placeholder}}"
+              value="{{answers[item.domId]}}"
+              data-dom="{{item.domId}}"
+              bindinput="onSurveyInput"
+            />
+
+            <view
+              wx:elif="{{item.field.kind === 'checkbox'}}"
+              class="option-row"
+              data-dom="{{item.domId}}"
+              bindtap="onToggleBox"
+            >
+              <view class="checkbox {{answers[item.domId] ? 'on' : ''}}">{{answers[item.domId] ? '✓' : ''}}</view>
+              <view>{{item.optionCaption}}</view>
+            </view>
+
+            <view wx:else class="switch-row">
+              <view class="muted">{{item.field.label || item.field.id}}</view>
+              <switch
+                checked="{{answers[item.domId]}}"
+                color="#0010ff"
+                data-dom="{{item.domId}}"
+                bindchange="onToggleSwitch"
+              />
+            </view>
+          </view>
+        </block>
+      </view>
+
+      <view class="btn-row">
+        <view class="btn primary block" bindtap="onSubmitSurvey">
+          {{submitting ? '…' : (isAnswerSheet ? s.submitAnswerSheet : s.submitSurvey)}}
+        </view>
+      </view>
+    </view>
+
+    <view class="card" wx:else>
+      <view class="field">
+        <view class="label">{{s.titleLabel}}<text class="req">*</text></view>
+        <input class="input" value="{{title}}" placeholder="{{s.titlePlaceholder}}" bindinput="onTitle" />
+        <view class="hint">{{s.titleHint}}</view>
+      </view>
+
+      <view class="field">
+        <view class="label">{{s.descLabel}}</view>
+        <textarea
+          class="textarea"
+          value="{{desc}}"
+          placeholder="{{s.descPlaceholder}}"
+          bindinput="onDesc"
+          maxlength="5000"
+        ></textarea>
+      </view>
+
+      <view class="field">
+        <view class="label">{{s.chooseFiles}}</view>
+        <view
+          class="attachment"
+          wx:for="{{fileList}}"
+          wx:key="name"
+          data-index="{{index}}"
+        >
+          <view class="attachment-name">{{item.name}}</view>
+          <view class="attachment-meta">{{item.sizeText}}</view>
+          <view class="chip danger" data-index="{{index}}" catchtap="onRemoveFile">{{s.remove}}</view>
+        </view>
+        <view class="btn-row">
+          <view class="btn ghost small" bindtap="onChooseFiles">＋ {{s.chooseFiles}}</view>
+        </view>
+        <view class="hint">{{s.dropHint}}</view>
+      </view>
+
+      <view class="notice" wx:if="{{submission.myUploadCount > 0}}">{{existingText}}</view>
+      <view class="notice" wx:else>{{firstText}}</view>
+
+      <view class="btn-row">
+        <view class="btn primary block" bindtap="onSubmitUpload">{{submitting ? '…' : s.submit}}</view>
+      </view>
+      <view class="hint">{{s.tip}}</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">{{s.submissionInfo}}</view>
+      <view class="kv">
+        <view class="kv-key">{{s.publisher}}</view>
+        <view class="kv-val">{{submission.createdBy}}</view>
+      </view>
+      <view class="kv">
+        <view class="kv-key">{{s.publishedAt}}</view>
+        <view class="kv-val">{{submission.createdFull}}</view>
+      </view>
+      <view class="kv">
+        <view class="kv-key">{{submission.deadlineText}}</view>
+        <view class="kv-val">{{submission.deadlineFull}}</view>
+      </view>
+    </view>
+  </block>
+</view>

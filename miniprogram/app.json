@@ -1,0 +1,28 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/login-key/login-key",
+    "pages/settings/settings",
+    "pages/home/home",
+    "pages/submissions/submissions",
+    "pages/submission-new/submission-new",
+    "pages/submission/submission",
+    "pages/upload-form/upload-form",
+    "pages/uploads/uploads",
+    "pages/upload-detail/upload-detail",
+    "pages/account/account",
+    "pages/account-login/account-login"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#0010ff",
+    "navigationBarTitleText": "智慧校园",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f4f5fb"
+  },
+  "darkmode": true,
+  "themeLocation": "theme.json",
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

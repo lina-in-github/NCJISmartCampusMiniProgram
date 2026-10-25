@@ -138,6 +138,7 @@ name=login_error_wrong_address lines=0 content=登录地址不正确
 name=login_error_unknown_identity lines=0 content=未知的登录身份
 name=login_error_enter_key lines=0 content=请输入班级密钥
 name=login_error_invalid_key lines=0 content=密钥无效或已被删除，请检查后重试
+name=login_error_role_mismatch lines=0 content=该密钥属于「{}」，请使用「{}」身份登录
 name=home_eyebrow_student lines=0 content=STUDENT SPACE
 name=home_eyebrow_parent lines=0 content=PARENT SPACE
 name=home_eyebrow_teacher lines=0 content=TEACHER DESK
@@ -168,6 +169,9 @@ name=home_empty_submissions_title lines=0 content=还没有征集
 name=home_empty_submissions_desc lines=0 content=当前班级还没有发布任何征集，稍后再来看看吧！
 name=home_empty_uploads_title lines=0 content=暂时没有需要关注的提交
 name=home_self_hint lines=0 content=还没有需要关注的提交
+name=home_pending_hint lines=0 content=优先处理未回复的提交
+name=home_admin_hint lines=0 content=全部内容尽在掌握
+name=home_parent_hint lines=0 content=孩子的最近提交
 name=stat_members lines=0 content=班级成员
 name=stat_active_submissions lines=0 content=进行中征集
 name=stat_pending lines=0 content=待回复提交
@@ -469,3 +473,36 @@ name=identity_student lines=0 content=学生
 name=identity_student_id lines=0 content=学生 {}
 name=student_no_full lines=0 content={} · {} 号
 name=student_no_short lines=0 content={} 号
+
+# ---------------------------------------------------------------------------
+# 微信小程序模拟端（miniprogram/）专用文案
+# ---------------------------------------------------------------------------
+name=mp_settings_title lines=0 content=服务器与数据源
+name=mp_back lines=0 content=返回
+name=mp_data_source lines=0 content=数据源
+name=mp_mode_online lines=0 content=在线模式
+name=mp_mode_offline lines=0 content=离线模拟
+name=mp_mode_online_desc lines=0 content=所有请求发往真实服务器（POST {}/api/*），请求体与响应体与 Rust 服务完全同构。
+name=mp_mode_offline_desc lines=0 content=不联网：本地按同一套 /api 契约应答，内置演示班级、征集与提交数据。
+name=mp_server_ip lines=0 content=服务器 IP / 地址
+name=mp_server_ip_hint lines=0 content=可只填 IP（如 192.168.1.20:3000），留空或错误时回退到 http://localhost:3000。
+name=mp_server_test lines=0 content=测试连接
+name=mp_server_ok lines=0 content=连接成功：{} · {}
+name=mp_server_fail lines=0 content=连接失败：{}
+name=mp_reset_data lines=0 content=重置离线模拟数据
+name=mp_reset_desc lines=0 content=会用内置演示数据覆盖本机的离线数据库（账号与偏好不受影响）。
+name=mp_reset_done lines=0 content=离线演示数据已重置
+name=mp_required_domain_tip lines=0 content=真机调试前，请在开发者工具中勾选「不校验合法域名…」，或在小程序后台配置该服务器域名（仅支持 https）。
+name=mp_offline_only_tip lines=0 content=当前为离线模拟：数据保存在本机，重置后恢复演示数据。
+name=mp_local_hint lines=0 content=在线模式下学生端只能读到本机上传过的提交（/api 没有「读取本人提交」的接口）；离线模拟可完整回看。
+name=mp_continue_enter lines=0 content=继续进入上次的身份
+name=mp_choose_files lines=0 content=选择附件
+name=mp_open_attachment lines=0 content=打开
+name=mp_reply_delete_note lines=0 content=逐条删除回复需要 reply id，而 /api/download 只返回回复内容，因此请在小程序外用管理员身份删除。
+name=mp_demo_accounts lines=0 content=演示账号：admin / admin123 · teacher / teacher123 · student / student123
+name=mp_local_account_note lines=0 content=账号与偏好保存在本机（服务端的 /user 使用 HttpOnly cookie 会话，小程序无法复用）；班级数据操作仍然调用 /api。
+name=mp_unbind_identity lines=0 content=解除绑定
+name=mp_unbind_confirm lines=0 content=仅从本机账号移除这个身份的绑定，服务器上的密钥不会被删除。
+name=mp_delete_key_remote lines=0 content=删除密钥
+name=mp_class_id_label lines=0 content=班级 ID
+name=mp_class_id_hint lines=0 content=创建班级后会自动填入；/api 没有「查询班级 ID」的接口，也可以向管理员索取 cls_ 开头的 ID。

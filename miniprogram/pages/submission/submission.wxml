@@ -1,0 +1,163 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{submission.name || s.title}}</view>
+      <view class="topbar-sub" wx:if="{{submission}}">
+        {{submission.isNotice ? s.noticeTitle : s.title}} · {{submission.typeText}}
+      </view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onToggleTheme">◐</view>
+      <view class="icon-btn" bindtap="onBack">{{s.backList}}</view>
+    </view>
+  </view>
+
+  <view class="notice danger" wx:if="{{error}}">{{error}}</view>
+  <view class="muted" wx:if="{{loading}}">…</view>
+
+  <block wx:if="{{!loading && submission}}">
+    <view class="card">
+      <view class="flex-between">
+        <view class="card-title">{{submission.name}}</view>
+        <view class="chip {{submission.deadlineTone}}">{{submission.deadlineText}}</view>
+      </view>
+      <view class="chip-row">
+        <view class="chip">{{submission.typeText}}</view>
+        <view class="chip pinned" wx:if="{{submission.pinned}}">{{s.noticePinned}}</view>
+        <view class="chip">{{submission.countText}}</view>
+        <view class="chip warn" wx:if="{{submission.pendingCount}}">{{submission.pendingCount}}</view>
+      </view>
+      <view class="divider"></view>
+      <view class="muted" wx:if="{{!submission.desc}}">{{s.noDesc}}</view>
+      <view class="survey-text" wx:if="{{submission.desc && !isForm}}">{{submission.desc}}</view>
+      <view class="card-foot">
+        <view>{{submission.createdBy}} · {{submission.createdFull}}</view>
+        <view>{{submission.deadlineFull}}</view>
+      </view>
+    </view>
+
+    <view class="notice warn" wx:if="{{submission.isNotice}}">{{s.noticeNoUpload}}</view>
+
+    <!-- 问卷 / 答题卡：就地填写 -->
+    <view class="card" wx:if="{{isForm && !submission.isNotice}}">
+      <view class="flex-between">
+        <view class="section-title">{{isAnswerSheet ? s.submitAnswerSheet : s.submitSurvey}}</view>
+        <view class="chip" wx:if="{{isAnswerSheet}}">{{s.allRequired}}</view>
+      </view>
+      <view class="hint">{{isAnswerSheet ? s.answerSheetTip : s.surveyTip}}</view>
+
+      <view class="empty" wx:if="{{!hasFields}}">
+        <view class="empty-desc">{{isAnswerSheet ? s.noFieldsSheet : s.noFields}}</view>
+      </view>
+
+      <view class="mt-md">
+        <block wx:for="{{blocks}}" wx:key="key">
+          <view class="survey-text" wx:if="{{item.kind === 'text'}}">{{item.text}}</view>
+          <view class="survey-field" wx:else>
+            <view class="label" wx:if="{{item.showLabel && item.field.label}}">
+              {{item.field.label}}<text class="req" wx:if="{{item.field.required}}">*</text>
+            </view>
+            <view class="label" wx:elif="{{item.groupCaption}}">
+              {{item.groupCaption}}<text class="req" wx:if="{{item.field.required}}">*</text>
+            </view>
+            <input
+              wx:if="{{item.field.kind === 'input'}}"
+              class="input"
+              type="{{item.field.inputType === 'number' ? 'number' : 'text'}}"
+              placeholder="{{item.field.placeholder}}"
+              value="{{answers[item.domId]}}"
+              data-dom="{{item.domId}}"
+              bindinput="onSurveyInput"
+            />
+            <view
+              wx:elif="{{item.field.kind === 'checkbox'}}"
+              class="option-row"
+              data-dom="{{item.domId}}"
+              bindtap="onToggleBox"
+            >
+              <view class="checkbox {{answers[item.domId] ? 'on' : ''}}">{{answers[item.domId] ? '✓' : ''}}</view>
+              <view>{{item.optionCaption}}</view>
+            </view>
+            <view wx:else class="switch-row">
+              <view class="muted">{{item.field.label || item.field.id}}</view>
+              <switch
+                checked="{{answers[item.domId]}}"
+                color="#0010ff"
+                data-dom="{{item.domId}}"
+                bindchange="onToggleSwitch"
+              />
+            </view>
+          </view>
+        </block>
+      </view>
+
+      <view class="btn-row">
+        <view class="btn primary block" bindtap="onSubmitSurvey">
+          {{submitting ? '…' : (isAnswerSheet ? s.submitAnswerSheet : s.submitSurvey)}}
+        </view>
+      </view>
+    </view>
+
+    <view class="btn-row" wx:if="{{!submission.isNotice && !isForm}}">
+      <view class="btn primary" bindtap="onGoUpload">{{submission.myUploadCount ? s.reupload : s.goSubmit}}</view>
+    </view>
+
+    <view class="btn-row" wx:if="{{ctx.staff}}">
+      <view class="btn ghost small" bindtap="onExport">{{s.export}}</view>
+      <view class="btn danger small" wx:if="{{ctx.role === 'admin'}}" bindtap="onDeleteSubmission">
+        {{s.deleteSubmission}}
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-head">
+        <view class="section-title">
+          {{ctx.staff ? s.listStaff : (ctx.parent ? s.listParent : s.listSelf)}}
+        </view>
+        <view class="muted">{{ctx.staff ? s.hintStaff : (ctx.parent ? s.hintParent : s.hintSelf)}}</view>
+      </view>
+
+      <view class="notice" wx:if="{{sourceNote}}">{{sourceNote}}</view>
+
+      <view class="empty" wx:if="{{!uploads.length}}">
+        <view class="empty-desc">
+          {{ctx.staff ? s.emptyStaff : (ctx.parent ? s.emptyParent : s.emptySelf)}}
+        </view>
+        <view class="btn-row" wx:if="{{!submission.isNotice && !isForm}}">
+          <view class="btn primary small" bindtap="onGoUpload">{{s.uploadFirst}}</view>
+        </view>
+      </view>
+
+      <view class="list" wx:else>
+        <view class="row" wx:for="{{uploads}}" wx:key="id" data-id="{{item.id}}" bindtap="onOpenUpload">
+          <view class="row-head">
+            <view class="row-title">{{item.title}}</view>
+            <view class="chip {{item.statusTone}}">{{item.statusText}}</view>
+          </view>
+          <view class="row-sub">
+            {{item.uploaderText}}<text wx:if="{{item.studentNo}}"> · {{item.studentNo}}</text> · {{item.timeText}}
+          </view>
+
+          <view class="kv" wx:for="{{item.answers}}" wx:for-item="answer" wx:key="id">
+            <view class="kv-key">{{answer.label}}</view>
+            <view class="kv-val">{{answer.value || s.emptyAnswer}}</view>
+          </view>
+
+          <view class="grade mt-sm" wx:if="{{item.grade}}">
+            <view class="grade-head">
+              <view class="muted">{{s.gradeTitle}}</view>
+              <view class="grade-score">{{item.grade.score}} / {{item.grade.full}}</view>
+            </view>
+            <view class="muted">{{item.grade.rightText}}</view>
+          </view>
+
+          <view class="row-desc" wx:if="{{item.descShort && !isForm}}">{{item.descShort}}</view>
+          <view class="card-foot">
+            <view>{{s.attachmentN}} {{item.attachmentCount}}</view>
+            <view class="accent-text">{{s.openDetail}} ›</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

@@ -1,0 +1,49 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{s.title}}</view>
+      <view class="topbar-sub">{{countText || ''}}{{ctx.classText ? ' · ' + ctx.classText : ''}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" wx:if="{{ctx.staff}}" bindtap="onPublish">{{s.publish}}</view>
+      <view class="icon-btn" bindtap="onToggleTheme">◐</view>
+    </view>
+  </view>
+
+  <view class="notice danger" wx:if="{{error}}">{{error}}</view>
+
+  <view class="empty" wx:if="{{!loading && !rows.length}}">
+    <view class="empty-title">{{s.title}}</view>
+    <view class="empty-desc">{{s.emptyDesc}}</view>
+    <view class="btn-row">
+      <view class="btn primary" wx:if="{{ctx.staff}}" bindtap="onPublish">{{s.publishFirst}}</view>
+    </view>
+  </view>
+
+  <view class="list">
+    <view class="card" wx:for="{{rows}}" wx:key="id" data-index="{{index}}">
+      <view bindtap="onOpen" data-index="{{index}}">
+        <view class="flex-between">
+          <view class="card-title">{{item.name}}</view>
+          <view class="chip {{item.deadlineTone}}">{{item.deadlineText}}</view>
+        </view>
+        <view class="chip-row">
+          <view class="chip">{{item.typeText}}</view>
+          <view class="chip pinned" wx:if="{{item.pinned}}">{{s.noticePinned}}</view>
+          <view class="chip">{{item.countText}}</view>
+          <view class="chip warn" wx:if="{{item.pendingCount}}">{{item.pendingCount}}</view>
+        </view>
+        <view class="card-desc" wx:if="{{item.descShort}}">{{item.descShort}}</view>
+        <view class="card-foot">
+          <view>{{item.createdBy}} · {{item.createdText}}</view>
+          <view class="accent-text">{{item.isNotice ? s.viewAll : s.goSubmit}}</view>
+        </view>
+      </view>
+      <view class="btn-row" wx:if="{{ctx.role === 'admin'}}">
+        <view class="btn small danger" data-index="{{index}}" catchtap="onDelete">{{s.delete}}</view>
+      </view>
+    </view>
+  </view>
+
+  <bottom-nav active="submissions" />
+</view>

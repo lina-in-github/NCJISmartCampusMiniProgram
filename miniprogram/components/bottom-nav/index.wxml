@@ -1,0 +1,12 @@
+<view class="bottom-nav">
+  <view
+    wx:for="{{items}}"
+    wx:key="key"
+    class="bottom-nav-item {{active === item.key ? 'active' : ''}}"
+    data-item="{{item}}"
+    bindtap="onTap"
+  >
+    <view>{{item.label}}</view>
+    <view class="bottom-nav-dot" wx:if="{{active === item.key}}"></view>
+  </view>
+</view>

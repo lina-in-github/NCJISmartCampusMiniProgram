@@ -77,7 +77,8 @@ done
 echo "==> 健康检查 / 页面 / 字符串"
 health="$(curl -sS "$BASE/api/health")"
 assert_jq "$health" '.ok == true' "健康检查"
-LOGIN_HTML="$(curl -sS "$BASE/login")"
+# v0.1.2 起 /login 会 303 到 /login/account，这里跟随跳转后校验最终页面
+LOGIN_HTML="$(curl -sS -L "$BASE/login")"
 grep -q '智慧校园' <<<"$LOGIN_HTML" || fail "登录页未渲染"
 if grep -q '@\[strings/' <<<"$LOGIN_HTML"; then fail "登录页存在未替换的字符串标签"; fi
 if grep -q 'style=' <<<"$LOGIN_HTML"; then fail "登录页存在行内样式（HTML/CSS 未解耦）"; fi
@@ -138,9 +139,9 @@ if grep -q 'style=' <<<"$SUBS_HTML"; then fail "学生征集页存在行内样�
 curl -sS -c "$TMP/tea-cookie" -o /dev/null -X POST -d "key=$TEACHER" "$BASE/login/pc/teacher"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/")" "200" "teachers 路径别名"
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/" | grep -q "林书言" || fail "老师空间页面缺少身份信息"
-# 已登录时 /login 仍展示身份选择，便于切换 auth；/ 则回到当前空间
-assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/login")" "200" "已登录访问登录页"
-curl -sS -b "$TMP/tea-cookie" "$BASE/login" | grep -q "选择你的登录身份" || fail "登录页缺少身份选择"
+# v0.1.5.1 起 /login 统一跳转到账号登录页（/login/account）；/ 则回到当前空间
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -L -b "$TMP/tea-cookie" "$BASE/login")" "200" "已登录访问登录页"
+curl -sS -L -b "$TMP/tea-cookie" "$BASE/login" | grep -q "智慧校园" || fail "账号登录页未渲染"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/")" "303" "已登录访问根路径"
 
 echo "==> 问卷模式"

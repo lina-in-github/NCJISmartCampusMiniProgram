@@ -1,0 +1,41 @@
+<view class="app theme-{{theme}}">
+  <view class="hero">
+    <view class="hero-eyebrow">{{s.roleText}}</view>
+    <view class="hero-title">{{s.title}}</view>
+    <view class="hero-desc">{{s.desc}}</view>
+  </view>
+
+  <view class="card">
+    <view class="field">
+      <view class="label">{{s.keyLabel}}</view>
+      <input
+        class="input mono"
+        value="{{key}}"
+        placeholder="{{s.placeholder}}"
+        bindinput="onInput"
+        confirm-type="go"
+        bindconfirm="onSubmit"
+      />
+      <view class="hint">{{s.keyHint}}</view>
+    </view>
+
+    <view class="notice danger" wx:if="{{error}}">{{error}}</view>
+
+    <view class="btn-row">
+      <view class="btn primary block" bindtap="onSubmit">{{loading ? '…' : s.submit}}</view>
+    </view>
+    <view class="btn-row">
+      <view class="btn ghost small" bindtap="onFillDemo">{{s.fill}} · {{s.demoLabel}}</view>
+      <view class="btn ghost small" bindtap="onOtherIdentity">{{s.other}}</view>
+    </view>
+    <view class="mono muted mt-sm">{{s.demo}}</view>
+    <view class="hint">{{s.authorized}}</view>
+  </view>
+
+  <view class="card">
+    <view class="flex-between">
+      <view class="muted">{{s.accountCenter}}</view>
+      <view class="btn small ghost" bindtap="onAccount">{{s.other}}</view>
+    </view>
+  </view>
+</view>

@@ -3,6 +3,7 @@
 一个面向班级的智慧校园 Web 服务：**征集发布 → 学生提交（含附件）→ 老师/管理员回复**，并提供班级、成员密钥与多身份账号管理。原生 HTML / CSS / JavaScript 前端，无 CDN、无前端构建步骤，支持手机版与电脑版布局。
 
 - 技术栈：Rust 2021 · Axum 0.8 · rusqlite（SQLite，bundled）· serde · sha2 · regex
+- 微信小程序模拟端：[`miniprogram/`](miniprogram) + [`doc/miniprogram.md`](doc/miniprogram.md) —— 同样的页面、同样的 `/api`（可填服务器 IP 在线连接，也可完全离线模拟）
 - 数据库：SQLite，首次启动自动建表并写入演示数据
 - 需求来源：[`doc/requirements.md`](doc/requirements.md)
 - 完整 API 文档：[`doc/api.md`](doc/api.md)
@@ -346,8 +347,10 @@ API 不使用该字符串库：API 的错误与成功消息统一为英文。
 ## 6. 测试
 
 ```bash
-cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析与校验/字符串解析同步/数据库种子等单元测试
-./scripts/smoke.sh  # 启动临时服务并在真实 HTTP 层跑一遍主流程（依赖 sqlite3）
+cargo test             # 时间/编码/MatchMode/附件/改名校验/问卷解析与校验/字符串解析同步/数据库种子等单元测试
+./scripts/smoke.sh     # 启动临时服务并在真实 HTTP 层跑一遍主流程（依赖 sqlite3）
+node scripts/mp_test.js  # 微信小程序模拟端自测（结构/文案/接口同构/页面流程，无需开发者工具）
+./scripts/mp_parity.sh   # 起临时后端，逐字段比较「离线模拟 vs 真实 /api」的响应
 ```
 
 `scripts/smoke.sh` 会在临时 SQLite 上验证字符串同步、页面无未替换标签、页面无行内样式、CSS 使用 `#0010ff` / `#ff0000` / `#eedd00`、登录、发布征集、上传、下载、匹配模式、回复、账号中心表单（注册/偏好/密码/删除身份）、账号与角色会话隔离、改名、权限拒绝、创建/删除班级与成员、删除密钥与对象，并自动清理进程与数据。
@@ -367,13 +370,19 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 ```
 .
 ├── Cargo.toml
+├── project.config.json     # 微信开发者工具项目配置（miniprogramRoot = miniprogram/）
 ├── doc/
 │   ├── requirements.md     # 原始需求
-│   └── api.md              # API 参考
+│   ├── api.md              # API 参考
+│   └── miniprogram.md      # 微信小程序模拟端说明
+├── miniprogram/            # 微信小程序源码（页面 / 组件 / 工具 / 离线模拟）
 ├── strings/
-│   └── zh-CN.txt           # 简体中文 UI 文案（启动时同步到 strings.db）
+│   └── zh-CN.txt           # 简体中文 UI 文案（启动时同步到 strings.db，也用于生成小程序文案）
 ├── scripts/
-│   └── smoke.sh            # HTTP 冒烟测试
+│   ├── smoke.sh            # HTTP 冒烟测试
+│   ├── mp_test.js          # 小程序离线自测（结构 / 文案 / 接口同构 / 页面流程）
+│   ├── mp_strings.py       # 由 strings/zh-CN.txt 生成小程序 strings.js
+│   └── make_demo_images.py # 生成离线模拟用的内嵌演示附件
 └── src/
     ├── main.rs             # 路由与启动
     ├── schema.sql          # SQLite DDL（由 db.rs 加载）
@@ -438,3 +447,32 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 | 「以班级为单位 / 学生以自身为单位」 | ✅ 服务端数据范围隔离 |
 
 祝使用愉快。🎓
+
+---
+
+## 10. 微信小程序模拟端（`miniprogram/`）
+
+把整个 Web 端搬进微信小程序：页面 1:1 对应，`/api` 完全同构，客户端可填服务器 IP 连真实服务，
+也可以**完全离线模拟**。完整说明见 **[`doc/miniprogram.md`](doc/miniprogram.md)**。
+
+```bash
+# 1. 用微信开发者工具导入仓库根目录（project.config.json 已配置 miniprogramRoot）
+# 2. 默认离线模拟：直接选身份、填入演示密钥即可体验全部页面
+# 3. 需要连真实服务：右上角「服务器与数据源」→ 在线模式 → 填服务器 IP
+cargo run                       # 后端（手机真机请用 SC_BIND=0.0.0.0:3000）
+
+node scripts/mp_test.js         # 小程序自测：结构 / 文案 / 接口同构 / 页面流程（无需开发者工具）
+./scripts/mp_parity.sh          # 小程序离线模拟 vs 真实 /api：51 个用例逐字段对比
+python3 scripts/mp_strings.py   # 改了 strings/zh-CN.txt 后重新生成小程序文案
+```
+
+- **页面**：登录（家长 / 学生 / 老师 / 管理员 + 演示密钥）、首页（统计 / 最近征集 / 待回复提交、
+  学生↔家长视角切换）、征集列表与发布、征集详情（公示 / 问卷就地填写 / 答题卡自动批改 / 提交列表）、
+  上传表单（多附件）、提交列表（待回复 / 已回复筛选）、提交详情（附件 / 回复 / 管理员删除）、
+  账号中心（偏好 / 密码 / 多身份改名与进入 / 创建班级 / 生成成员密钥）、服务器设置。
+- **`/api` 同构**：`utils/api.js` 与 `doc/api.md` 逐字段一致，后端零改动；
+  `utils/mock/` 在离线模式下按同一份契约应答（含错误文案、状态码、MatchMode、级联删除、问卷必填校验）。
+- **服务器 IP**：设置页可只填 IP（`192.168.1.20:3000`），自动补协议、去掉结尾斜杠，可测试 `/api/health`。
+- **文案**：`strings/zh-CN.txt` 是唯一来源，`python3 scripts/mp_strings.py` 生成小程序 `strings.js`。
+- **已知差异**：`/api` 没有「读取本人提交 / 删除单条回复 / 查询班级信息」的接口，
+  相关能力在小程序里用「本机缓存 + 离线本地读取」补齐，详见 `doc/miniprogram.md` 第 6 节。
