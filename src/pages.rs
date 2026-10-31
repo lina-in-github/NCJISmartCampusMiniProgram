@@ -668,7 +668,7 @@ pub async fn login_account_page(
 }
 
 /// 旧表单登录入口：密码现在只在浏览器里使用。
-/// 浏览器会拦截表单提交并调用 /api/logintry + /api/getAuths；没有 JS 时给出提示。
+/// 浏览器会拦截表单提交并调用 /api/login-try + /api/get-auths；没有 JS 时给出提示。
 pub async fn user_login(
     State(_st): State<AppState>,
     _headers: HeaderMap,
@@ -905,7 +905,7 @@ pub async fn user_prefs(
     }
 }
 
-/// 旧改密接口：密码不离开浏览器，由前端调用 `/api/resetPassword`。
+/// 旧改密接口：密码不离开浏览器，由前端调用 `/api/reset-password`。
 pub async fn user_password(
     State(_st): State<AppState>,
     _headers: HeaderMap,

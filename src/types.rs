@@ -32,14 +32,14 @@ pub struct Session {
     pub created_at: i64,
 }
 
-/// `/api/logintry` 创建的一次性挑战会话（保存在内存，5 分钟有效）。
+/// `/api/login-try` 创建的一次性挑战会话（保存在内存，5 分钟有效）。
 #[derive(Clone, Debug)]
 pub struct LoginSession {
     pub user_id: i64,
     pub challenge: Vec<u8>,
     pub answer_key: Vec<u8>,
     pub created_at: i64,
-    /// 是否已经通过挑战验证（getAuths / resetPassword 会置位）。
+    /// 是否已经通过挑战验证（get-auths / reset-password 会置位）。
     pub verified: bool,
     pub attempts: u8,
 }

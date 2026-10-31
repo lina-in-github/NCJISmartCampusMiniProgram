@@ -279,14 +279,14 @@
     return new Uint8Array(plaintext);
   }
 
-  /** 从密码派生 X25519 私钥。salt 可直接使用 logintry 返回的 kdf.salt。 */
+  /** 从密码派生 X25519 私钥。salt 可直接使用 login-try 返回的 kdf.salt。 */
   async function derivePrivateKey(password, salt, iterations) {
     if (!password) throw new Error("PASSWORD_REQUIRED");
     if (!salt) throw new Error("SALT_REQUIRED");
     return pbkdf2(password, salt, iterations);
   }
 
-  /** 解密 logintry 返回的 challengeEncrypt，得到 32 字节挑战。 */
+  /** 解密 login-try 返回的 challengeEncrypt，得到 32 字节挑战。 */
   async function decryptChallenge(privateBytes, challengeEncryptB64) {
     var raw = b64ToBytes(challengeEncryptB64);
     if (raw.length !== KEY_LEN + NONCE_LEN + CHALLENGE_LEN + TAG_LEN) {
@@ -308,7 +308,7 @@
     return challenge;
   }
 
-  /** 用 logintry 返回的 answerEncryptingKey 加密挑战，返回 base64。 */
+  /** 用 login-try 返回的 answerEncryptingKey 加密挑战，返回 base64。 */
   async function encryptAnswer(answerKeyB64, challenge) {
     var key = b64ToBytes(answerKeyB64);
     if (key.length !== KEY_LEN) throw new Error("INVALID_ANSWER_KEY");
@@ -467,7 +467,7 @@
     var salt = defaultSalt(username);
     var iterations = ITERATIONS;
     try {
-      info = await request("/api/logintry", { username: username });
+      info = await request("/api/login-try", { username: username });
     } catch (err) {
       if (err.code === "pubkey_missing") {
         // 兼容老账号：用旧密码做一次迁移，把公钥交给服务端。
@@ -479,10 +479,10 @@
             pubkey: bytesToB64(publicKey(legacyPrivate))
           });
         } catch (upgradeError) {
-          // 另一个标签页可能已经完成迁移；400 时继续重试 logintry。
+          // 另一个标签页可能已经完成迁移；400 时继续重试 login-try。
           if (upgradeError.status !== 400) throw upgradeError;
         }
-        info = await request("/api/logintry", { username: username });
+        info = await request("/api/login-try", { username: username });
       } else {
         throw err;
       }
@@ -494,7 +494,7 @@
     var privateBytes = await derivePrivateKey(password, salt, iterations);
     var challenge = await decryptChallenge(privateBytes, info.challengeEncrypt);
     var encryptedAnswer = await encryptAnswer(info.answerEncryptingKey, challenge);
-    var result = await request("/api/getAuths", {
+    var result = await request("/api/get-auths", {
       loginSessionID: info.loginSessionID,
       encryptedAnswer: encryptedAnswer
     });
@@ -580,7 +580,7 @@
       }
       setLoading(button, true);
       try {
-        var info = await request("/api/logintry", { username: username });
+        var info = await request("/api/login-try", { username: username });
         var salt = (info.kdf && info.kdf.salt) || defaultSalt(username);
         var iterations = (info.kdf && info.kdf.iterations) || ITERATIONS;
         var oldPrivate = await derivePrivateKey(oldPassword, salt, iterations);
@@ -588,7 +588,7 @@
         var answer = await encryptAnswer(info.answerEncryptingKey, challenge);
         var newPrivate = await derivePrivateKey(newPassword, salt, iterations);
         var newPub = bytesToB64(publicKey(newPrivate));
-        await request("/api/resetPassword", {
+        await request("/api/reset-password", {
           loginSessionID: info.loginSessionID,
           encryptedAnswer: answer,
           newPasswordPubKey: newPub

@@ -6,7 +6,7 @@
 - 数据库：SQLite，首次启动自动建表并写入演示数据
 - 需求来源：[`doc/requirements.md`](doc/requirements.md)
 - 完整 API 文档：[`doc/api.md`](doc/api.md)
-- 当前版本：**v0.1.7** — 用户登录改为**非对称挑战**：密码只在本机通过 PBKDF2 派生 X25519 私钥，服务端仅保存公钥；新增 `/api/logintry`、`/api/getAuths`、`/api/resetPassword`、`/api/register`、`/api/upgrade-pubkey`
+- 当前版本：**v0.1.7** — 用户登录改为**非对称挑战**：密码只在本机通过 PBKDF2 派生 X25519 私钥，服务端仅保存公钥；新增 `/api/login-try`、`/api/get-auths`、`/api/reset-password`、`/api/register`、`/api/upgrade-pubkey`
 - 历史版本：v0.1.6 学生 / 家长视角改为前台展示区分；v0.1.5 新增征集模式「答题卡」（问卷派生：`id` / `data-answer` / `data-score`、全部必填、前端自动批改）；v0.1.4 新增征集模式「问卷」（简介中的 `<input/>` / `<checkbox/>` / `<switch/>` 渲染为表单、bot 提交 JSON 答案）；v0.1.2 UI 文案集中到 `strings/zh-CN.txt`、API 文案改为英文、角色身份与账号会话隔离；v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
 
 ---
@@ -141,9 +141,9 @@ SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
 | `/api/del-object` | 管理员 | 按 id 删除征集 / 提交 / 回复 / 班级 / auth |
 | `/api/health` | 公开 | 健康检查（额外提供） |
 | `/api/register` | 公开 | 提交用户名 + X25519 公钥创建账号（可选绑定密钥） |
-| `/api/logintry` | 公开 | 返回挑战密文与回答加密密钥 |
-| `/api/getAuths` | 公开（需登录会话） | 验证挑战后返回该账号的全部 auth 密钥 |
-| `/api/resetPassword` | 公开（需登录会话） | 验证挑战后替换公钥（修改密码） |
+| `/api/login-try` | 公开 | 返回挑战密文与回答加密密钥 |
+| `/api/get-auths` | 公开（需登录会话） | 验证挑战后返回该账号的全部 auth 密钥 |
+| `/api/reset-password` | 公开（需登录会话） | 验证挑战后替换公钥（修改密码） |
 | `/api/upgrade-pubkey` | 公开 | 旧账号一次性迁移：校验旧密码哈希并写入公钥 |
 
 详细字段、匹配模式、示例与错误码见 **[`doc/api.md`](doc/api.md)**。
@@ -195,8 +195,8 @@ users  1 ─── n  auths  n ─── 1  classes
 
 - 账号登录流程：客户端用 PBKDF2-HMAC-SHA256（210,000 次，盐为 `smart-campus/auth/v1:` + 小写用户名）
   从密码派生 32 字节 X25519 私钥 → 公钥在注册 / 改密时上传。
-  登录时 `/api/logintry` 用公钥加密随机挑战，客户端解密后用一次性对称密钥加密回答；
-  `/api/getAuths` 验证通过后返回该账号的全部 auth 密钥，并写入 `sc_uid` 会话。
+  登录时 `/api/login-try` 用公钥加密随机挑战，客户端解密后用一次性对称密钥加密回答；
+  `/api/get-auths` 验证通过后返回该账号的全部 auth 密钥，并写入 `sc_uid` 会话。
 - 密码和私钥不会发送到服务端；服务端只保存公钥。旧数据库中的 `pwhash` 仅用于
   `/api/upgrade-pubkey` 的一次性迁移，迁移成功或重置密码后会清空。
 - `sc_uid`（HttpOnly、SameSite=Lax、7 天）是 `/user` 与账号相关操作的唯一用户来源；
@@ -391,7 +391,7 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 ./scripts/smoke.sh  # 启动临时服务并在真实 HTTP 层跑一遍主流程（依赖 sqlite3、node）
 ```
 
-`scripts/smoke.sh` 会在临时 SQLite 上验证字符串同步、页面无未替换标签、页面无行内样式、CSS 使用 `#0010ff` / `#ff0000` / `#eedd00`、非对称登录（`logintry` / `getAuths` / 注册 / 改密 / 旧账号迁移 / 错误答案）、发布征集、上传、下载、匹配模式、回复、账号中心表单（注册/偏好/密码/删除身份）、账号与角色会话隔离、改名、权限拒绝、创建/删除班级与成员、删除密钥与对象，并自动清理进程与数据。
+`scripts/smoke.sh` 会在临时 SQLite 上验证字符串同步、页面无未替换标签、页面无行内样式、CSS 使用 `#0010ff` / `#ff0000` / `#eedd00`、非对称登录（`login-try` / `get-auths` / 注册 / 改密 / 旧账号迁移 / 错误答案）、发布征集、上传、下载、匹配模式、回复、账号中心表单（注册/偏好/密码/删除身份）、账号与角色会话隔离、改名、权限拒绝、创建/删除班级与成员、删除密钥与对象，并自动清理进程与数据。
 
 学生 / 家长视角在冒烟测试中覆盖：账号偏好设为家长视角后的家长文案、顶栏切换入口、学生视角文案互斥、
 老师身份无法进入家长视角、个人主页保存显示模式后「进入」按该视角打开、以及 API 与权限不受视角影响。
@@ -425,7 +425,7 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
     ├── db.rs               # 唯一业务 SQL/事务/连接层、建班/成员、演示数据、公钥迁移
     ├── types.rs            # 状态、模型、请求/表单、登录挑战会话
     ├── tools.rs            # 时间、base64、转义、会话、MatchMode
-    ├── api.rs              # /api/* 处理（含 logintry/getAuths/resetPassword/register）
+    ├── api.rs              # /api/* 处理（含 login-try/get-auths/reset-password/register）
     ├── pages.rs            # 页面路由、账号中心动作（只调用 db::*）
     ├── view.rs             # 服务端 HTML 渲染（@[strings/key] 标签）
     ├── views/             # 页面片段模板（format! 占位符）
@@ -481,9 +481,9 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 | 个人主页配置学生模式 / 家长模式显示 | ✅ `/user` 的「显示模式（学生身份）」，并立即套用 + 决定「进入」时的视角 |
 | 角色会话不反查 user；未登录账号中心跳登录页 | ✅ `sc_sid` / `sc_uid` 分离，`/user` → `/login/account` |
 | v0.1.7 用户登录改为非对称加密（前端 KDF 生成公私钥、上传公钥、挑战验证） | ✅ `src/assets/auth.js` + `src/crypto.rs`，密码不上传 |
-| v0.1.7 `/api/logintry` 返回 `loginSessionID` / `challengeEncrypt` / `answerEncryptingKey` | ✅ 见 `doc/api.md` 第 12 节 |
-| v0.1.7 `/api/getAuths` 验证后返回 `auths` | ✅ 返回该账号全部 auth 密钥 |
-| v0.1.7 `/api/resetPassword` 用 `newPasswordPubKey` 修改公钥 | ✅ 同时作废旧会话与旧密码 |
+| v0.1.7 `/api/login-try` 返回 `loginSessionID` / `challengeEncrypt` / `answerEncryptingKey` | ✅ 见 `doc/api.md` 第 12 节 |
+| v0.1.7 `/api/get-auths` 验证后返回 `auths` | ✅ 返回该账号全部 auth 密钥 |
+| v0.1.7 `/api/reset-password` 用 `newPasswordPubKey` 修改公钥 | ✅ 同时作废旧会话与旧密码 |
 | 「以班级为单位 / 学生以自身为单位」 | ✅ 服务端数据范围隔离 |
 
 祝使用愉快。🎓

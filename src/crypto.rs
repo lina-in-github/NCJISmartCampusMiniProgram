@@ -4,7 +4,7 @@
 //!
 //! * 客户端用 `PBKDF2-HMAC-SHA256(password, salt)` 派生 32 字节 X25519 私钥；
 //!   公钥 = X25519 基点乘法结果（32 字节）。
-//! * `/api/logintry` 用用户公钥做 ECIES：临时 X25519 密钥 + HKDF-SHA256 +
+//! * `/api/login-try` 用用户公钥做 ECIES：临时 X25519 密钥 + HKDF-SHA256 +
 //!   AES-256-GCM，把随机挑战加密到 `challengeEncrypt`。
 //! * 客户端解密挑战后，用服务器下发的 `answerEncryptingKey`（32 字节随机
 //!   对称密钥）做 AES-256-GCM，得到 `encryptedAnswer`。

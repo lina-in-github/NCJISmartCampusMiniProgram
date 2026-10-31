@@ -67,7 +67,7 @@ async function request(base, path, body) {
 }
 
 async function challenge(base, username, password) {
-  const start = await request(base, "/api/logintry", { username: username });
+  const start = await request(base, "/api/login-try", { username: username });
   const info = start.data;
   const salt = (info.kdf && info.kdf.salt) || crypto.defaultSalt(info.username || username);
   const iterations = (info.kdf && info.kdf.iterations) || crypto.ITERATIONS;
@@ -94,7 +94,7 @@ function accountCookie(headers) {
 
 async function doLogin(base, username, password) {
   const { info, encryptedAnswer } = await challenge(base, username, password);
-  const got = await request(base, "/api/getAuths", {
+  const got = await request(base, "/api/get-auths", {
     loginSessionID: info.loginSessionID,
     encryptedAnswer
   });
@@ -127,7 +127,7 @@ async function doReset(base, username, oldPassword, newPassword) {
     oldPassword
   );
   const newPrivate = await crypto.derivePrivateKey(newPassword, salt, iterations);
-  await request(base, "/api/resetPassword", {
+  await request(base, "/api/reset-password", {
     loginSessionID: info.loginSessionID,
     encryptedAnswer,
     newPasswordPubKey: crypto.bytesToB64(crypto.publicKey(newPrivate))

@@ -625,8 +625,8 @@ fn verify_login_answer(
     Ok(verified)
 }
 
-/// `/api/logintry`：给用户公钥加密一个随机挑战，并下发答案加密密钥。
-pub async fn logintry(State(st): State<AppState>, Json(req): Json<LoginTryReq>) -> Response {
+/// `/api/login-try`：给用户公钥加密一个随机挑战，并下发答案加密密钥。
+pub async fn login_try(State(st): State<AppState>, Json(req): Json<LoginTryReq>) -> Response {
     let username = req.username.trim();
     if username.is_empty() {
         return api_bad("username must not be empty");
@@ -713,7 +713,7 @@ pub async fn logintry(State(st): State<AppState>, Json(req): Json<LoginTryReq>) 
     }))
 }
 
-/// `/api/getAuths`：验证答案后返回该账号的全部班级密钥，并建立账号会话。
+/// `/api/get-auths`：验证答案后返回该账号的全部班级密钥，并建立账号会话。
 pub async fn get_auths(
     State(st): State<AppState>,
     headers: HeaderMap,
@@ -853,7 +853,7 @@ pub async fn register(State(st): State<AppState>, Json(req): Json<RegisterReq>) 
     }))
 }
 
-/// `/api/resetPassword`：验证挑战后替换公钥（即修改密码）。
+/// `/api/reset-password`：验证挑战后替换公钥（即修改密码）。
 pub async fn reset_password(
     State(st): State<AppState>,
     headers: HeaderMap,

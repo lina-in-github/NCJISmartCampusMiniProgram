@@ -2,6 +2,9 @@
 
 所有接口均位于 `/api` 下；除 `/api/health`（`GET`）外均使用 `POST` + JSON。示例中的 base URL 默认为 `http://localhost:3000`。
 
+> **命名约定**：所有接口路径统一使用 kebab-case（小写单词 + `-`），例如
+> `/api/new-submission`、`/api/get-auths`、`/api/reset-password`；不再提供 camelCase 路径别名。
+
 ## 0. 通用约定
 
 ### 0.1 请求头
@@ -12,7 +15,7 @@ Content-Type: application/json
 
 ### 0.2 鉴权
 
-- 除 `/api/health`、`/api/logintry`、`/api/getAuths`、`/api/resetPassword`、`/api/register`、`/api/upgrade-pubkey` 外，均需要请求体中的 `auth`：一个班级密钥，例如 `SC-STU-DEMO-2026`。
+- 除 `/api/health`、`/api/login-try`、`/api/get-auths`、`/api/reset-password`、`/api/register`、`/api/upgrade-pubkey` 外，均需要请求体中的 `auth`：一个班级密钥，例如 `SC-STU-DEMO-2026`。
 - 密钥同时决定 **班级** 与 **角色**，不允许跨班操作。
 - `/api/del-object` 按原始需求只传 `id`；也接受可选的 `auth`，缺省时使用浏览器登录 cookie（`sc_sid`）鉴权。
 - 角色：`student`（学生）、`teacher`（老师）、`admin`（管理员）。家长使用学生密钥，不具备教师/管理员权限。
@@ -52,7 +55,7 @@ Content-Type: application/json
 - 征集：`sub_*`
 - 提交：`up_*`
 - 回复：`rep_*`
-- 登录挑战会话：`login_*`（仅在 `/api/logintry` 响应中出现，300 秒有效）
+- 登录挑战会话：`login_*`（仅在 `/api/login-try` 响应中出现，300 秒有效）
 
 ### 0.5 时间
 
@@ -619,7 +622,7 @@ X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用�
 | 私钥 | 上述 32 字节，作为 X25519 标量 |
 | 公钥 | `X25519(private, basepoint)`，32 字节 |
 
-`/api/logintry` 会在响应的 `kdf` 字段回显服务端实际使用的参数与盐，客户端应优先使用
+`/api/login-try` 会在响应的 `kdf` 字段回显服务端实际使用的参数与盐，客户端应优先使用
 该字段，以免用户名大小写导致派生结果不一致。
 
 > 密码和私钥永远不离开客户端；服务端只保存 32 字节公钥（base64）。
@@ -663,10 +666,10 @@ X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用�
 ```
 
 失败：用户名已存在返回 `400`（`code: "username_taken"`），公钥格式错误返回 `400`。
-注册只保存公钥，不接收密码；注册后请立即调用 `/api/logintry` + `/api/getAuths`
+注册只保存公钥，不接收密码；注册后请立即调用 `/api/login-try` + `/api/get-auths`
 完成一次挑战验证。
 
-### 12.4 `/api/logintry`
+### 12.4 `/api/login-try`
 
 ```json
 { "username": "student" }
@@ -700,7 +703,7 @@ X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用�
 - 账号尚未设置公钥时返回 `401`，并带 `"code": "pubkey_missing"`；客户端可用
   `/api/upgrade-pubkey` 做一次旧密码迁移。
 
-### 12.5 `/api/getAuths`
+### 12.5 `/api/get-auths`
 
 ```json
 {
@@ -738,7 +741,7 @@ X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用�
   纯 API 客户端可以忽略 cookie，只使用 `auths`。
 - 答案错误或会话过期返回 `401`。同一会话连续失败 5 次后作废。
 
-### 12.6 `/api/resetPassword`
+### 12.6 `/api/reset-password`
 
 验证挑战后替换公钥（即修改密码）。
 
@@ -775,7 +778,7 @@ X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用�
 { "ok": true, "msg": "public key upgraded", "username": "student" }
 ```
 
-新账号不需要此接口；浏览器在 `/api/logintry` 返回 `pubkey_missing` 时会自动调用一次。
+新账号不需要此接口；浏览器在 `/api/login-try` 返回 `pubkey_missing` 时会自动调用一次。
 
 ### 12.8 挑战与回答的加密细节
 
