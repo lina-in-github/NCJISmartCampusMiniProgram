@@ -1039,6 +1039,88 @@ pub fn delete_auth(db: &Connection, auth_id: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// 轮换 auth 密钥（auth 泄漏处置）。
+///
+/// 在同一个事务里：
+///   1. 删除旧 auth（先删除，避免 `(class_id, student_id)` / `(class_id, short_id)`
+///      唯一索引在插入新 auth 时冲突）；
+///   2. 用新的随机密钥创建新 auth，继承旧 auth 的班级、角色、学号、短学号和显示名称；
+///   3. 把旧 auth 名下的征集 / 提交 / 回复 / 班级创建者引用迁移到新 auth。
+///
+/// 旧 auth 的历史展示快照（姓名、学号等）保持不变。调用方必须先完成账号挑战验证，
+/// 并传入该 auth 绑定账号的 `user_id`。成功时返回新 auth 的密钥。
+pub fn refresh_auth(db: &Connection, auth: &AuthCtx, user_id: i64) -> Result<String, String> {
+    if auth.user_id != Some(user_id) {
+        return Err("auth does not belong to this account".to_string());
+    }
+
+    let tx = db.unchecked_transaction().map_err(|e| e.to_string())?;
+    let old_created_at: Option<i64> = tx
+        .query_row(
+            "SELECT created_at FROM auths WHERE id = ?1",
+            params![auth.id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some(created_at) = old_created_at else {
+        return Err("auth no longer exists".to_string());
+    };
+
+    let removed = tx
+        .execute("DELETE FROM auths WHERE id = ?1", params![auth.id])
+        .map_err(|e| e.to_string())?;
+    if removed != 1 {
+        return Err("auth no longer exists".to_string());
+    }
+
+    let new_auth_id = new_id("auth");
+    let mut new_key = new_auth_key(&auth.role);
+    let mut unique = false;
+    for _ in 0..32 {
+        if new_key != auth.key && !auth_key_exists(&tx, &new_key) {
+            unique = true;
+            break;
+        }
+        new_key = new_auth_key(&auth.role);
+    }
+    if !unique {
+        return Err("failed to generate a unique auth key".to_string());
+    }
+
+    tx.execute(
+        "INSERT INTO auths
+         (id, key, class_id, user_id, role, student_id, short_id, display_name, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            new_auth_id,
+            new_key,
+            auth.class_id,
+            auth.user_id,
+            auth.role,
+            auth.student_id,
+            auth.short_id,
+            auth.display_name,
+            created_at
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // 旧 auth 没有外键约束，必须手动把历史数据挂到新 auth 上。
+    for sql in [
+        "UPDATE uploads SET auth_id = ?1 WHERE auth_id = ?2",
+        "UPDATE replies SET auth_id = ?1 WHERE auth_id = ?2",
+        "UPDATE submissions SET created_by = ?1 WHERE created_by = ?2",
+        "UPDATE classes SET created_by = ?1 WHERE created_by = ?2",
+    ] {
+        tx.execute(sql, params![new_auth_id, auth.id])
+            .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(new_key)
+}
+
 pub fn auth_ids_in_class(db: &Connection, class_id: &str) -> Vec<String> {
     let mut stmt = match db.prepare("SELECT id FROM auths WHERE class_id = ?1") {
         Ok(s) => s,
@@ -1901,6 +1983,95 @@ mod tests {
             assert!(c2.is_admin());
             // 不允许跨班新增
             assert!(create_members(&conn, &admin, &c.id, "Student", 1).is_err());
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn refresh_auth_moves_data_and_rotates_key() {
+        let path = temp_db();
+        {
+            let conn = open(&path).unwrap();
+            let teacher = load_auth_by_key(&conn, DEMO_TEACHER_KEY).unwrap();
+            let student = load_auth_by_key(&conn, DEMO_STUDENT_KEY).unwrap();
+            let user_id = student.user_id.expect("demo student is bound");
+
+            let sub = insert_submission(&conn, &teacher, "轮换测试", "", "homework", None)
+                .expect("submission");
+            let up = insert_upload(&conn, &student, &sub, "作业", "", &serde_json::json!([]))
+                .expect("upload");
+            let rep = insert_reply(&conn, &teacher, &up, "收到").expect("reply");
+
+            let old_key = student.key.clone();
+            let old_id = student.id.clone();
+            let new_key = refresh_auth(&conn, &student, user_id).expect("refresh student");
+            assert_ne!(new_key, old_key);
+            assert!(load_auth_by_key(&conn, &old_key).is_none());
+            let rotated = load_auth_by_key(&conn, &new_key).expect("new auth");
+            assert_ne!(rotated.id, old_id);
+            assert_eq!(rotated.class_id, student.class_id);
+            assert_eq!(rotated.role, student.role);
+            assert_eq!(rotated.student_id, student.student_id);
+            assert_eq!(rotated.short_id, student.short_id);
+            assert_eq!(rotated.display_name, student.display_name);
+            assert_eq!(rotated.user_id, student.user_id);
+
+            // 旧 auth 名下的提交仍属于这个身份，并且能用新密钥读取。
+            let (count, latest) = own_upload_info(&conn, &rotated, &sub);
+            assert_eq!(count, 1);
+            assert_eq!(latest.as_deref(), Some(up.as_str()));
+            assert!(load_upload(&conn, &rotated, &up).is_some());
+            // 回复是老师写的，不应被学生 auth 的轮换影响。
+            let reply_auth: String = conn
+                .query_row(
+                    "SELECT auth_id FROM replies WHERE id = ?1",
+                    params![rep],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(reply_auth, teacher.id);
+
+            // 旧 auth 已删除，不能再次轮换。
+            assert!(refresh_auth(&conn, &student, user_id).is_err());
+
+            // 老师和征集创建者同样迁移 created_by / replies.auth_id。
+            let old_teacher_key = teacher.key.clone();
+            let new_teacher_key = refresh_auth(&conn, &teacher, teacher.user_id.expect("bound"))
+                .expect("refresh teacher");
+            assert_ne!(new_teacher_key, old_teacher_key);
+            let teacher2 = load_auth_by_key(&conn, &new_teacher_key).expect("new teacher auth");
+            let created_by: String = conn
+                .query_row(
+                    "SELECT created_by FROM submissions WHERE id = ?1",
+                    params![sub],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(created_by, teacher2.id);
+            let reply_auth: String = conn
+                .query_row(
+                    "SELECT auth_id FROM replies WHERE id = ?1",
+                    params![rep],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(reply_auth, teacher2.id);
+            assert!(load_submission(&conn, &teacher2, &sub).is_some());
+
+            // 创建班级时记录的 auth 引用也要迁移。
+            let admin = load_auth_by_key(&conn, DEMO_ADMIN_KEY).unwrap();
+            let created = create_class(&conn, &admin, "轮换测试班", "").expect("class");
+            let new_admin_key =
+                refresh_auth(&conn, &admin, admin.user_id.expect("bound")).expect("refresh admin");
+            let new_admin = load_auth_by_key(&conn, &new_admin_key).expect("new admin auth");
+            let class_creator: Option<String> = conn
+                .query_row(
+                    "SELECT created_by FROM classes WHERE id = ?1",
+                    params![created.id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(class_creator.as_deref(), Some(new_admin.id.as_str()));
         }
         let _ = std::fs::remove_file(&path);
     }

@@ -9,5 +9,8 @@
 /smartcampus.log
 /strings.db
 
+# Runtime logs
+/log/
+
 # Local TLS certificates / keys
 /certs/

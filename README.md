@@ -6,7 +6,7 @@
 - 数据库：SQLite，首次启动自动建表并写入演示数据
 - 需求来源：[`doc/requirements.md`](doc/requirements.md)
 - 完整 API 文档：[`doc/api.md`](doc/api.md)
-- 当前版本：**v0.1.7** — 用户登录改为**非对称挑战**：密码只在本机通过 PBKDF2 派生 X25519 私钥，服务端仅保存公钥；新增 `/api/login-try`、`/api/get-auths`、`/api/reset-password`、`/api/register`、`/api/upgrade-pubkey`
+- 当前版本：**v0.1.7** — 用户登录改为**非对称挑战**：密码只在本机通过 PBKDF2 派生 X25519 私钥，服务端仅保存公钥；新增 `/api/login-try`、`/api/get-auths`、`/api/refresh-key`、`/api/reset-password`、`/api/register`、`/api/upgrade-pubkey`
 - 历史版本：v0.1.6 学生 / 家长视角改为前台展示区分；v0.1.5 新增征集模式「答题卡」（问卷派生：`id` / `data-answer` / `data-score`、全部必填、前端自动批改）；v0.1.4 新增征集模式「问卷」（简介中的 `<input/>` / `<checkbox/>` / `<switch/>` 渲染为表单、bot 提交 JSON 答案）；v0.1.2 UI 文案集中到 `strings/zh-CN.txt`、API 文案改为英文、角色身份与账号会话隔离；v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
 
 ---
@@ -20,7 +20,7 @@ cargo run
 # 打开 http://localhost:3000
 ```
 
-首次启动会在当前目录创建 `smartcampus.db` 并写入演示班级、征集、提交和回复；同时读取 `strings/*.txt`、同步到 `strings.db`。删除 `smartcampus.db` 即可重新生成演示数据。
+首次启动会在当前目录创建 `smartcampus.db` 并写入演示班级、征集、提交和回复；同时读取 `strings/*.txt`、同步到 `strings.db`，并在 `./log/` 写入运行日志。删除 `smartcampus.db` 即可重新生成演示数据。
 
 ### 环境变量
 
@@ -34,10 +34,27 @@ cargo run
 | `SC_LANG` | `zh-CN` | 运行时选择的语言（对应 `strings/<lang>.txt`） |
 | `SC_TLS_CERT` | — | PEM 证书链路径；与 `SC_TLS_KEY` 同时设置时启用 HTTPS |
 | `SC_TLS_KEY` | — | PEM 私钥路径；与 `SC_TLS_CERT` 同时设置时启用 HTTPS |
+| `SC_LOG_DIR` | `log` | 日志目录；不存在时自动创建 |
+| `SC_LOG_LEVEL` | `info` | 日志级别：`off` / `error` / `warn` / `info` / `debug` |
 
 ```bash
 SC_DB=./campus.db SC_BIND=127.0.0.1:8080 cargo run
 ```
+
+### 日志
+
+- 默认写入 `./log/app-YYYY-MM-DD.log`，每天自动切换到新文件；启动时自动创建 `log/`。
+- `SC_LOG_DIR` 可改目录，`SC_LOG_LEVEL` 可改级别。示例：
+
+```bash
+SC_LOG_DIR=/var/log/smart-campus SC_LOG_LEVEL=warn cargo run
+```
+
+- 记录：启动信息、HTTP 方法 / 路径 / 状态码 / 耗时、4xx（WARN）、5xx（ERROR）、panic、账号中心操作错误。
+- **不记录**：请求体、密码、班级密钥、cookie、`encryptedAnswer`、附件内容。
+- 静态资源、favicon 与成功的 `/api/health` 只在 `debug` 级别记录，避免刷屏；日志写入失败不会影响服务。
+- 日志初始化失败时只在终端提示，不会阻止服务启动。
+- 日志按天追加，不自动删除历史文件；生产环境请按磁盘容量配置清理 / 保留策略，并限制 `log/` 目录权限。
 
 ### 启用 HTTPS（TLS）
 
@@ -110,7 +127,7 @@ SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
 | `…/submission/<id>/upload` | 上传表单（支持多附件、拖拽、预览）；公示版禁用并跳转详情页；问卷/答题卡改为填写简介里的题目 |
 | `…/submission/<id>/all` | 该征集下的提交（学生仅自己，老师/管理员全班）；公示版仅渲染详情；问卷/答题卡渲染可填写的表单 |
 | `…/upload/<id>/` | 提交详情：附件预览、回复列表、重新上传、管理员删除 |
-| `/user` | 账号中心：偏好设置、密码、绑定/删除身份、创建班级、生成成员密钥；未登录 → `/login/account` |
+| `/user` | 账号中心：偏好设置、密码、绑定/删除/轮换身份、创建班级、生成成员密钥；未登录 → `/login/account` |
 | `/logout` | POST，退出登录 |
 
 兼容说明：
@@ -123,7 +140,7 @@ SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
 
 ## 3. API
 
-所有接口为 `POST`，请求与响应均为 JSON（`Content-Type: application/json`）。角色密钥通过请求体的 `auth` 字段传递；`/api/del-object` 可按需求只传 `id`，此时回退使用登录 cookie 鉴权。
+所有接口为 `POST`，请求与响应均为 JSON（`Content-Type: application/json`）。角色密钥通过请求体的 `auth` 字段传递；`/api/del-object` 可按需求只传 `id`，此时回退使用登录 cookie 鉴权。`/multi-api` 可在一个请求中顺序调用多个内部 API（子请求各自携带 `auth`）。
 
 > **语言约定（v0.1.2）**：API 字段、错误与 `msg` 使用英文；页面 UI 文案全部来自 `strings/zh-CN.txt`。
 
@@ -143,8 +160,10 @@ SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
 | `/api/register` | 公开 | 提交用户名 + X25519 公钥创建账号（可选绑定密钥） |
 | `/api/login-try` | 公开 | 返回挑战密文与回答加密密钥 |
 | `/api/get-auths` | 公开（需登录会话） | 验证挑战后返回该账号的全部 auth 密钥 |
+| `/api/refresh-key` | 公开（需登录会话） | 验证挑战后轮换 auth 密钥：新密钥继承全部数据，旧密钥立即删除 |
 | `/api/reset-password` | 公开（需登录会话） | 验证挑战后替换公钥（修改密码） |
 | `/api/upgrade-pubkey` | 公开 | 旧账号一次性迁移：校验旧密码哈希并写入公钥 |
+| `/multi-api` | 公开（子请求各自鉴权） | 批量调用多个内部 API，`results` 与 `apis` 索引严格对应；禁止两次确认接口 |
 
 详细字段、匹配模式、示例与错误码见 **[`doc/api.md`](doc/api.md)**。
 
@@ -170,6 +189,7 @@ users  1 ─── n  auths  n ─── 1  classes
 - `replies`：老师/管理员回复，按时间排序。
 - 删除班级会级联删除该班级的 auth、征集、提交与回复；删除 auth 不会删除历史提交（保留提交人快照）。删除征集/提交会级联删除其下提交/回复。
 - 身份改名会同步刷新该 auth 在历史提交、回复与征集中的显示名称快照，改名后旧内容也会立即使用新名称。
+- `/api/refresh-key` 会先把旧 auth 的征集 / 提交 / 回复引用迁移到新 auth，再删除旧记录；历史展示快照保持不变。
 
 ### 4.2 权限矩阵
 
@@ -183,6 +203,7 @@ users  1 ─── n  auths  n ─── 1  classes
 | 删除回复 / 提交 / 征集 | ❌ | ❌ | ❌ | ✅ |
 | 创建班级 / 生成成员密钥 | ❌ | ❌ | ❌ | ✅ |
 | 删除当前密钥 | ✅ | ✅ | ✅ | ✅ |
+| 轮换自身 auth 密钥（需账号挑战） | ✅ | ✅ | ✅ | ✅ |
 | 修改自身 auth 名称 | ✅ | ✅ | ✅ | ✅ |
 
 学生/家长的直接访问也做服务端校验：即使手动拼出其他同学的 `/upload/<id>/` 地址也返回 404。
@@ -199,6 +220,11 @@ users  1 ─── n  auths  n ─── 1  classes
   `/api/get-auths` 验证通过后返回该账号的全部 auth 密钥，并写入 `sc_uid` 会话。
 - 密码和私钥不会发送到服务端；服务端只保存公钥。旧数据库中的 `pwhash` 仅用于
   `/api/upgrade-pubkey` 的一次性迁移，迁移成功或重置密码后会清空。
+- **auth 泄漏处置**：`/api/refresh-key` 在完成账号挑战后，用旧 `auth` 换一个新密钥。
+  新 auth 继承旧 auth 的班级、角色、学号、显示名称与全部历史数据；旧 auth 立即删除，
+  绑在旧 auth 上的角色会话同步失效。旧密钥本身不足以调用该接口，必须同时通过账号挑战。
+- 账号中心每个身份右侧提供「轮换密钥」图标按钮：弹窗内输入当前密码，完成挑战后展示新密钥并提供复制；
+  旧密钥立即失效，页面刷新后身份列表只保留新密钥。
 - `sc_uid`（HttpOnly、SameSite=Lax、7 天）是 `/user` 与账号相关操作的唯一用户来源；
   `sc_sid`（同样 HttpOnly）代表班级空间身份，保存 `auth_id / 页面角色 / 视图模式`。
 - 未登录访问 `/user` 会 `303` 跳转到 `/login/account`；仅持有角色 `sc_sid` 时同样不会进入账号中心。
@@ -370,7 +396,7 @@ API 不使用该字符串库：API 的错误与成功消息统一为英文。
 - **问卷**：简介中的输入框 / 复选框 / 开关渲染为扁平控件（开关为自绘滑块），末尾一键提交，答案自动整理成键值列表。
 - **答题卡**：全部必答，提交后由浏览器自动批改，详情页显示得分卡（总分、答对题数、逐题正误与错题答案），列表显示得分标签。
 - **视角**：学生身份在顶栏一键切换「学生视角 / 家长视角」，只用词不同、数据相同。
-- **账号中心**：深/浅/跟随系统主题、默认视图、学生身份显示模式（学生 / 家长视角）、显示名称、密码、多身份密钥（显示/复制/改名/进入/删除）、创建班级、生成成员密钥。
+- **账号中心**：深/浅/跟随系统主题、默认视图、学生身份显示模式（学生 / 家长视角）、显示名称、密码、多身份密钥（显示/复制/改名/轮换/进入/删除）、创建班级、生成成员密钥。
 - 断点：>1120px 侧边栏电脑版；≤920px 顶栏 + 底部导航手机版；≤640px 单列紧凑布局。
 - 主题会记住到 `localStorage`；未登录页也支持系统深色模式。
 
@@ -423,16 +449,17 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
     ├── survey.rs           # 问卷 / 答题卡：控件解析、渲染、必填校验、答案整理、批改结果
     ├── crypto.rs           # 非对称登录密码学：X25519 / HKDF / AES-256-GCM / base64
     ├── db.rs               # 唯一业务 SQL/事务/连接层、建班/成员、演示数据、公钥迁移
+    ├── logging.rs          # ./log 每日文件日志、请求/错误/panic 记录
     ├── types.rs            # 状态、模型、请求/表单、登录挑战会话
     ├── tools.rs            # 时间、base64、转义、会话、MatchMode
-    ├── api.rs              # /api/* 处理（含 login-try/get-auths/reset-password/register）
+    ├── api.rs              # /api/* 处理（含 login-try/get-auths/refresh-key/reset-password/register）、/multi-api 批量调用
     ├── pages.rs            # 页面路由、账号中心动作（只调用 db::*）
     ├── view.rs             # 服务端 HTML 渲染（@[strings/key] 标签）
     ├── views/             # 页面片段模板（format! 占位符）
     └── assets/
         ├── app.css         # 重置 / 主题变量 / 双端适配 / 扁平控件样式
         ├── app.js          # 上传、回复、删除、主题等交互（无行内样式）
-        └── auth.js         # 本地 KDF + X25519 + AES-GCM 登录 / 注册 / 改密
+        └── auth.js         # 本地 KDF + X25519 + AES-GCM 登录 / 注册 / 改密 / 轮换密钥
 ```
 
 ---
@@ -446,6 +473,8 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 - 没有分页；演示数据与班级规模下足够，数据量增大后应在 `/api/download`、提交列表与账号页增加游标分页。
 - `/api/new-user` 生成的密钥只返回一次，请管理员妥善保存；重新发放会创建新密钥。
 - 演示密钥、演示账号仅用于本地体验，部署前请删除数据库或替换种子数据；旧数据库账号的密码哈希会保留到首次公钥迁移 / 改密，之后清空，新账号不保存密码哈希。
+- `/multi-api` 单次最多 100 个子请求，按数组顺序串行执行；禁止嵌套 `/multi-api` 以及 `login-try` / `get-auths` / `reset-password` / `refresh-key` 等依赖一次性挑战的接口。
+- 运行日志默认写入 `./log/app-YYYY-MM-DD.log`，只记录启动信息、HTTP 路径 / 状态 / 耗时与错误描述，不记录请求体、密码、班级密钥、cookie、`encryptedAnswer` 或附件内容。请限制日志目录权限并配置保留 / 清理策略。
 - `strings.db` 只保存 UI 文案，不包含用户数据；`strings/` 缺失或格式错误时服务会拒绝启动，以避免页面显示未翻译文本。
 
 ---
@@ -481,9 +510,12 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 | 个人主页配置学生模式 / 家长模式显示 | ✅ `/user` 的「显示模式（学生身份）」，并立即套用 + 决定「进入」时的视角 |
 | 角色会话不反查 user；未登录账号中心跳登录页 | ✅ `sc_sid` / `sc_uid` 分离，`/user` → `/login/account` |
 | v0.1.7 用户登录改为非对称加密（前端 KDF 生成公私钥、上传公钥、挑战验证） | ✅ `src/assets/auth.js` + `src/crypto.rs`，密码不上传 |
+| auth 泄漏处置：轮换 auth 密钥 | ✅ `src/views/user_account*` + `src/assets/auth.js` 弹窗，调用 `/api/refresh-key` |
 | v0.1.7 `/api/login-try` 返回 `loginSessionID` / `challengeEncrypt` / `answerEncryptingKey` | ✅ 见 `doc/api.md` 第 12 节 |
 | v0.1.7 `/api/get-auths` 验证后返回 `auths` | ✅ 返回该账号全部 auth 密钥 |
 | v0.1.7 `/api/reset-password` 用 `newPasswordPubKey` 修改公钥 | ✅ 同时作废旧会话与旧密码 |
+| `/multi-api` 批量调用，`results` 索引对应，每项自带 `ok`，禁止两次确认接口 | ✅ 顺序执行、最多 100 项，见 `doc/api.md` 第 13 节 |
+| 日志系统（放在 `./log` 下） | ✅ `src/logging.rs` 每日 `app-YYYY-MM-DD.log`，记录启动 / HTTP / 错误 / panic，不写敏感数据 |
 | 「以班级为单位 / 学生以自身为单位」 | ✅ 服务端数据范围隔离 |
 
 祝使用愉快。🎓

@@ -603,7 +603,143 @@
     });
   }
 
+  function refreshKeyError(err) {
+    if (err && err.message === "PASSWORD_REQUIRED") return S("flash_wrong_credentials");
+    if (err && err.code === "auth_invalid") return S("flash_refresh_key_invalid");
+    if (err && err.status === 401) return S("flash_wrong_credentials");
+    if (err && err.status === 403) return S("flash_refresh_key_forbidden");
+    if (err && err.status === 400) return S("flash_refresh_key_invalid");
+    return friendlyError(err);
+  }
+
+  function wireRefreshKeyDialog() {
+    var dialog = $("#refresh-key-dialog");
+    var form = $("#refresh-key-form");
+    if (!dialog || !form) return;
+
+    var result = $("#refresh-key-result");
+    var target = $("#refresh-key-target");
+    var password = $("#refresh-key-password");
+    var submit = $("#refresh-key-submit");
+    var cancel = $("#refresh-key-cancel");
+    var finish = $("#refresh-key-finish");
+    var value = $("#refresh-key-value");
+    var copy = $("#refresh-key-copy");
+    var username = form.getAttribute("data-username") || "";
+    var key = "";
+    var succeeded = false;
+
+    function reset() {
+      form.hidden = false;
+      if (result) result.hidden = true;
+      if (password) password.value = "";
+      if (value) value.textContent = "";
+      if (copy) copy.removeAttribute("data-copy");
+      if (target) target.textContent = "";
+    }
+
+    function closeDialog() {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
+
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-refresh-key]");
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      key = btn.getAttribute("data-refresh-key") || "";
+      if (!key) {
+        toast(S("flash_refresh_key_missing"), "error");
+        return;
+      }
+      reset();
+      succeeded = false;
+      if (target) {
+        var name = btn.getAttribute("data-refresh-name") || "";
+        var className = btn.getAttribute("data-refresh-class") || "";
+        target.textContent = className + (name ? " · " + name : "");
+      }
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      setTimeout(function () {
+        if (password) password.focus();
+      }, 30);
+    });
+
+    if (cancel) {
+      cancel.addEventListener("click", closeDialog);
+    }
+    if (finish) {
+      finish.addEventListener("click", closeDialog);
+    }
+
+    dialog.addEventListener("click", function (e) {
+      if (e.target === dialog) closeDialog();
+    });
+
+    dialog.addEventListener("close", function () {
+      var done = succeeded;
+      succeeded = false;
+      key = "";
+      reset();
+      if (done) location.href = "/user";
+    });
+
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      if (!key) {
+        toast(S("flash_refresh_key_missing"), "error");
+        return;
+      }
+      if (!username) {
+        toast(S("flash_need_login"), "error");
+        return;
+      }
+      var pw = password ? String(password.value || "") : "";
+      if (!pw) {
+        toast(S("flash_enter_password"), "error");
+        if (password) password.focus();
+        return;
+      }
+      setLoading(submit, true, S("account_refresh_key_working"));
+      try {
+        var info = await request("/api/login-try", { username: username });
+        var salt = (info.kdf && info.kdf.salt) || defaultSalt(username);
+        var iterations = (info.kdf && info.kdf.iterations) || ITERATIONS;
+        var privateBytes = await derivePrivateKey(pw, salt, iterations);
+        var challenge = await decryptChallenge(privateBytes, info.challengeEncrypt);
+        var answer = await encryptAnswer(info.answerEncryptingKey, challenge);
+        var res = await request("/api/refresh-key", {
+          loginSessionID: info.loginSessionID,
+          encryptedAnswer: answer,
+          authRefreshing: key
+        });
+        var newKey = String(res.newAuth || "");
+        if (!newKey) throw new Error("MISSING_NEW_AUTH");
+        succeeded = true;
+        if (password) password.value = "";
+        if (value) value.textContent = newKey;
+        if (copy) copy.setAttribute("data-copy", newKey);
+        form.hidden = true;
+        if (result) result.hidden = false;
+        if (finish) {
+          setTimeout(function () {
+            finish.focus();
+          }, 30);
+        }
+      } catch (err) {
+        if (err && err.message) console.error(err.message);
+        toast(refreshKeyError(err), "error");
+        if (password) password.focus();
+      } finally {
+        setLoading(submit, false);
+      }
+    });
+  }
+
   wireLoginForm();
   wireRegisterForm();
   wirePasswordForm();
+  wireRefreshKeyDialog();
 })(typeof window !== "undefined" ? window : globalThis);

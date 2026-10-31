@@ -837,7 +837,7 @@ pub async fn user_delete_auth(
     {
         let db = st.db.lock().unwrap();
         if let Err(e) = db::delete_auth(&db, &auth_id) {
-            eprintln!("delete auth failed: {e}");
+            crate::logging::error("account", format!("delete auth failed: {e}"));
             return msg_redirect("/user", "err", &t("flash_delete_failed"));
         }
     }
@@ -899,7 +899,7 @@ pub async fn user_prefs(
             msg_redirect("/user", "ok", &t("flash_prefs_saved"))
         }
         Err(e) => {
-            eprintln!("save prefs failed: {e}");
+            crate::logging::error("account", format!("save prefs failed: {e}"));
             msg_redirect("/user", "err", &t("flash_save_failed"))
         }
     }
@@ -939,7 +939,7 @@ pub async fn user_create_class(
     match db::create_class(&db, &auth, &form.name, &form.desc) {
         Ok(_c) => msg_redirect("/user", "ok", &t("flash_class_created")),
         Err(e) => {
-            eprintln!("create class failed: {e}");
+            crate::logging::error("account", format!("create class failed: {e}"));
             msg_redirect("/user", "err", &t("flash_class_create_failed"))
         }
     }

@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use axum::{
-    extract::DefaultBodyLimit,
+    extract::{DefaultBodyLimit, Request},
     http::{header, Uri},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
@@ -15,6 +17,7 @@ use crate::types::AppState;
 mod api;
 mod crypto;
 mod db;
+mod logging;
 mod pages;
 mod strings;
 mod survey;
@@ -88,6 +91,28 @@ async fn favicon() -> Response {
         .into_response()
 }
 
+async fn log_requests(req: Request, next: Next) -> Response {
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let started = Instant::now();
+    let response = next.run(req).await;
+    let status = response.status();
+    let elapsed = started.elapsed().as_millis();
+    let line = format!("{method} {path} -> {} ({elapsed}ms)", status.as_u16());
+    // 静态资源、favicon 和成功的健康检查只在 debug 级别记录，避免刷屏。
+    let quiet = path.starts_with("/static/") || path == "/favicon.svg" || path == "/api/health";
+    if quiet && status.is_success() {
+        logging::debug("http", line);
+    } else if status.is_server_error() {
+        logging::error("http", line);
+    } else if status.is_client_error() {
+        logging::warn("http", line);
+    } else {
+        logging::info("http", line);
+    }
+    response
+}
+
 async fn fallback(uri: Uri) -> Response {
     if uri.path().starts_with("/api/") {
         return tools::api_not_found("endpoint not found");
@@ -97,20 +122,52 @@ async fn fallback(uri: Uri) -> Response {
 
 #[tokio::main]
 async fn main() {
+    let log_dir = std::env::var("SC_LOG_DIR")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "log".to_string());
+    let log_level = std::env::var("SC_LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
+    if let Err(e) = logging::init(&log_dir, &log_level) {
+        eprintln!("failed to initialize logging: {e}");
+    }
+    logging::info(
+        "boot",
+        format!(
+            "smart-campus v{} starting (log dir: {log_dir}, level: {log_level})",
+            env!("CARGO_PKG_VERSION")
+        ),
+    );
+    let default_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        logging::error("panic", format!("{info}"));
+        default_panic(info);
+    }));
+
     let strings_dir = std::env::var("SC_STRINGS_DIR").unwrap_or_else(|_| "strings".to_string());
     let strings_db = std::env::var("SC_STRINGS_DB").unwrap_or_else(|_| "strings.db".to_string());
     let lang = std::env::var("SC_LANG").unwrap_or_else(|_| "zh-CN".to_string());
     match strings::init(&strings_dir, &strings_db, &lang) {
-        Ok(Some(warning)) => eprintln!("{warning}"),
+        Ok(Some(warning)) => {
+            eprintln!("{warning}");
+            logging::warn("strings", &warning);
+        }
         Ok(None) => {}
         Err(e) => {
-            eprintln!("failed to load UI strings: {e}");
+            logging::error("strings", format!("failed to load UI strings: {e}"));
             std::process::exit(1);
         }
     }
+    logging::info("boot", format!("strings loaded from {strings_dir}"));
 
     let db_path = std::env::var("SC_DB").unwrap_or_else(|_| "smartcampus.db".to_string());
-    let conn = db::open(&db_path).expect("database initialization failed");
+    let conn = match db::open(&db_path) {
+        Ok(conn) => conn,
+        Err(e) => {
+            logging::error("db", format!("database initialization failed: {e}"));
+            std::process::exit(1);
+        }
+    };
+    logging::info("boot", format!("database ready: {db_path}"));
 
     let state = AppState {
         db: Arc::new(db::Database::new(conn)),
@@ -151,9 +208,12 @@ async fn main() {
         .route("/api/health", get(api::health))
         .route("/api/login-try", post(api::login_try))
         .route("/api/get-auths", post(api::get_auths))
+        .route("/api/refresh-key", post(api::refresh_key))
         .route("/api/reset-password", post(api::reset_password))
         .route("/api/register", post(api::register))
         .route("/api/upgrade-pubkey", post(api::upgrade_pubkey))
+        .route("/multi-api", post(api::multi_api))
+        .route("/api/multi-api", post(api::multi_api))
         .route("/static/app.css", get(static_css))
         .route("/static/app.js", get(static_js))
         .route("/static/auth.js", get(static_auth_js))
@@ -161,6 +221,7 @@ async fn main() {
         .route("/favicon.svg", get(favicon))
         .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
         .fallback(fallback)
+        .layer(middleware::from_fn(log_requests))
         .with_state(state);
 
     let port: u16 = std::env::var("SC_PORT")
@@ -193,6 +254,11 @@ async fn main() {
     let scheme = if tls.is_some() { "https" } else { "http" };
 
     let (string_count, string_lang) = strings::stats();
+    logging::info(
+        "boot",
+        format!("strings ready: {string_count} ({string_lang})"),
+    );
+    logging::info("boot", format!("listening on {scheme}://{display}"));
     println!("{} · Campus OS", strings::t("title"));
     println!("  Address : {scheme}://{display}");
     println!("  Strings : {string_count} ({string_lang})");
@@ -209,6 +275,7 @@ async fn main() {
         let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
             .await
             .expect("failed to load TLS certificate or key");
+        logging::info("boot", "TLS enabled");
         println!("  TLS     : {cert} / {key}");
         axum_server::tls_rustls::bind_rustls(addr, config)
             .serve(app.into_make_service())

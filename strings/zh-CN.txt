@@ -13,6 +13,7 @@ name=role_admin lines=0 content=管理员
 name=role_student lines=0 content=学生
 name=role_account lines=0 content=账号中心
 name=common_close lines=0 content=关闭
+name=common_done lines=0 content=完成
 name=common_cancel lines=0 content=取消
 name=common_confirm lines=0 content=确定
 name=common_save lines=0 content=保存
@@ -379,6 +380,18 @@ name=account_rename_title lines=0 content=为身份改名
 name=account_rename_desc lines=0 content=新名称会显示在该班级的提交、回复与页面身份信息中。
 name=account_rename_label lines=0 content=新名称
 name=account_rename_hint lines=0 content=1–40 个字符，改名会同步刷新该身份的历史显示名称。
+name=account_refresh_key lines=0 content=轮换密钥
+name=account_refresh_key_panel_hint lines=0 content=密钥只对你可见；泄漏时可点击身份右侧的轮换图标
+name=account_refresh_key_title lines=0 content=轮换身份密钥
+name=account_refresh_key_desc lines=0 content=用于密钥泄漏处置。验证账号密码后，将为该身份生成新密钥；新密钥继承该身份的全部班级数据，旧密钥立即失效。
+name=account_refresh_key_hint lines=0 content=请输入当前账号密码，用于完成一次性挑战验证。
+name=account_refresh_key_confirm lines=0 content=确认轮换
+name=account_refresh_key_working lines=0 content=正在验证并轮换…
+name=account_refresh_key_done_title lines=0 content=新密钥已生成
+name=account_refresh_key_done_desc lines=0 content=旧密钥已立即失效。请复制并妥善保存新密钥；完成后页面会刷新身份列表。
+name=flash_refresh_key_forbidden lines=0 content=该身份不属于当前账号或尚未绑定，无法轮换
+name=flash_refresh_key_invalid lines=0 content=该身份密钥无效或已被轮换
+name=flash_refresh_key_missing lines=0 content=缺少身份信息，请刷新页面重试
 name=account_member_generated_title lines=0 content=本次生成 {} 个密钥（请妥善保存，仅显示一次）
 name=account_member_generated_toast lines=0 content=已生成 {} 个密钥
 name=flash_need_login lines=0 content=请先登录账号
@@ -392,6 +405,7 @@ name=flash_key_bound lines=0 content=该密钥已被其他账号绑定
 name=flash_key_invalid lines=0 content=密钥无效或已被删除
 name=flash_username_taken lines=0 content=用户名已被使用，请换一个
 name=flash_enter_key lines=0 content=请输入班级密钥
+name=flash_enter_password lines=0 content=请输入密码
 name=flash_already_bound lines=0 content=该密钥已经绑定在你的账号上
 name=flash_bound lines=0 content=密钥已绑定到账号
 name=flash_bind_failed lines=0 content=绑定失败，请稍后重试

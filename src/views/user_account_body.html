@@ -68,7 +68,7 @@
   <section class="panel account-section">
     <div class="panel-head">
       <h3 class="panel-title">{key}@[strings/account_my_auths]<span class="count">{n_auths}</span></h3>
-      <span class="hint">@[strings/common_key_only_visible]</span>
+      <span class="hint">@[strings/account_refresh_key_panel_hint]</span>
     </div>
     <div class="panel-body">
       {auths}
@@ -90,3 +90,30 @@
     <div class="panel-body">{admin_area}</div>
   </section>
 </div>
+<dialog id="refresh-key-dialog" class="dialog" aria-label="@[strings/account_refresh_key_title]">
+  <form class="dialog-card" id="refresh-key-form" data-username="{username}">
+    <h3 class="dialog-title" id="refresh-key-title">{key}@[strings/account_refresh_key_title]</h3>
+    <p class="dialog-msg">@[strings/account_refresh_key_desc]</p>
+    <div class="account-note" id="refresh-key-target"></div>
+    <div class="field">
+      <label class="label" for="refresh-key-password">@[strings/account_current_password]</label>
+      <input class="input" id="refresh-key-password" type="password" autocomplete="current-password" required>
+      <span class="hint">@[strings/account_refresh_key_hint]</span>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn outline" type="button" id="refresh-key-cancel">@[strings/common_cancel]</button>
+      <button class="btn danger" type="submit" id="refresh-key-submit">@[strings/account_refresh_key_confirm]</button>
+    </div>
+  </form>
+  <div class="dialog-card" id="refresh-key-result" hidden>
+    <h3 class="dialog-title">{key}@[strings/account_refresh_key_done_title]</h3>
+    <p class="dialog-msg">@[strings/account_refresh_key_done_desc]</p>
+    <div class="member-key-row">
+      <span class="key mono" id="refresh-key-value"></span>
+      <button class="btn ghost sm" type="button" id="refresh-key-copy">{copy}@[strings/account_copy_key]</button>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn primary" type="button" id="refresh-key-finish">@[strings/common_done]</button>
+    </div>
+  </div>
+</dialog>

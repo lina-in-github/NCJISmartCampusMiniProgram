@@ -3,7 +3,7 @@
 所有接口均位于 `/api` 下；除 `/api/health`（`GET`）外均使用 `POST` + JSON。示例中的 base URL 默认为 `http://localhost:3000`。
 
 > **命名约定**：所有接口路径统一使用 kebab-case（小写单词 + `-`），例如
-> `/api/new-submission`、`/api/get-auths`、`/api/reset-password`；不再提供 camelCase 路径别名。
+> `/api/new-submission`、`/api/get-auths`、`/api/reset-password`
 
 ## 0. 通用约定
 
@@ -15,7 +15,7 @@ Content-Type: application/json
 
 ### 0.2 鉴权
 
-- 除 `/api/health`、`/api/login-try`、`/api/get-auths`、`/api/reset-password`、`/api/register`、`/api/upgrade-pubkey` 外，均需要请求体中的 `auth`：一个班级密钥，例如 `SC-STU-DEMO-2026`。
+- 除 `/api/health`、`/api/login-try`、`/api/get-auths`、`/api/refresh-key`、`/api/reset-password`、`/api/register`、`/api/upgrade-pubkey`、`/multi-api` 外，均需要请求体中的 `auth`：一个班级密钥，例如 `SC-STU-DEMO-2026`。
 - 密钥同时决定 **班级** 与 **角色**，不允许跨班操作。
 - `/api/del-object` 按原始需求只传 `id`；也接受可选的 `auth`，缺省时使用浏览器登录 cookie（`sc_sid`）鉴权。
 - 角色：`student`（学生）、`teacher`（老师）、`admin`（管理员）。家长使用学生密钥，不具备教师/管理员权限。
@@ -741,7 +741,61 @@ X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用�
   纯 API 客户端可以忽略 cookie，只使用 `auths`。
 - 答案错误或会话过期返回 `401`。同一会话连续失败 5 次后作废。
 
-### 12.6 `/api/reset-password`
+### 12.6 `/api/refresh-key`（auth 泄漏处置）
+
+通过账号挑战后轮换一个已绑定到该账号的 auth 密钥。新 auth 继承旧 auth 的班级、角色、
+学号、短学号、显示名称与绑定用户，并把旧 auth 名下的征集、提交、回复与班级创建者引用
+迁移到新 auth；随后删除旧 auth，旧密钥立即失效。
+
+#### 请求
+
+```json
+{
+  "loginSessionID": "login_XXXXXXXX",
+  "encryptedAnswer": "BASE64_60_BYTES",
+  "authRefreshing": "SC-STU-DEMO-2026"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `loginSessionID` | string | ✅ | `/api/login-try` 返回的挑战会话 |
+| `encryptedAnswer` | byte[] | ✅ | 用 `answerEncryptingKey` 加密后的挑战回答（60 字节；base64 或整数数组） |
+| `authRefreshing` | string | ✅ | 要轮换的旧 auth 密钥，必须已绑定到当前登录账号 |
+
+#### 响应
+
+```json
+{ "ok": true, "newAuth": "SC-STU-XXXXXXXX" }
+```
+
+- `newAuth` 是新 auth 的密钥，请立即保存；旧密钥不能再用。
+- 轮换后：
+  - 新 auth 保留原 `classID` / `role` / `studentID` / `shortStudentID` / `displayName` 与创建时间；
+  - 原 auth 创建的征集、提交、回复、班级创建者引用全部迁移到新 auth；
+  - 旧 auth 记录被删除，绑在旧 auth 上的 `sc_sid` 角色会话与本次账号挑战会话立即失效；
+  - 账号会话 `sc_uid` 不受影响，账号中心会列出新密钥。
+- 错误：`400`（`authRefreshing` 为空）、`401`（挑战失败 / 会话过期 / 旧密钥无效；旧密钥无效时
+  `code` 为 `"auth_invalid"`）、`403`（旧密钥属于其他账号，或尚未绑定账号）。
+- 旧密钥未被认领（`user_id` 为空）时不能直接轮换；请先在 `/user` 登录并绑定该密钥。
+- 轮换使用新随机密钥，不会复用旧值；旧密钥本身不能替代账号挑战，调用者必须能通过挑战验证。
+- 账号中心 `/user` 已提供「轮换密钥」入口：输入当前密码后由浏览器完成挑战并调用本接口，成功后展示新密钥并刷新身份列表。
+
+```bash
+# encryptedAnswer 需由客户端按 12.9 的流程生成（可参考 scripts/auth-client.js）
+curl -s http://localhost:3000/api/refresh-key \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "loginSessionID":"login_XXXXXXXX",
+    "encryptedAnswer":"BASE64_60_BYTES",
+    "authRefreshing":"SC-STU-DEMO-2026"
+  }'
+```
+
+> 该接口用于密钥泄漏、成员转班/离职等场景。轮换后客户端应改用 `newAuth`；
+> 旧的 `sc_sid` 会话已失效，需要重新进入身份或刷新登录状态。
+
+### 12.7 `/api/reset-password`
 
 验证挑战后替换公钥（即修改密码）。
 
@@ -762,7 +816,7 @@ X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用�
   当前浏览器会收到一个新的 `sc_uid` cookie。
 - 失败返回 `401`（挑战错误 / 会话过期）或 `400`（公钥格式错误）。
 
-### 12.7 `/api/upgrade-pubkey`（旧账号迁移）
+### 12.8 `/api/upgrade-pubkey`（旧账号迁移）
 
 仅用于老数据库中没有公钥的账号。它仍然校验旧密码哈希，成功后清空旧哈希。
 
@@ -780,7 +834,7 @@ X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用�
 
 新账号不需要此接口；浏览器在 `/api/login-try` 返回 `pubkey_missing` 时会自动调用一次。
 
-### 12.8 挑战与回答的加密细节
+### 12.9 挑战与回答的加密细节
 
 **服务端 → 客户端（挑战）**
 
@@ -803,7 +857,7 @@ X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用�
 > 强密码；服务端使用 210,000 次 PBKDF2 迭代来提高离线破解成本。登录挑战 300 秒过期，
 > 同一挑战连续失败 5 次即作废。
 
-### 12.9 浏览器与命令行客户端
+### 12.10 浏览器与命令行客户端
 
 - 浏览器：`/static/auth.js`（源码 `src/assets/auth.js`）实现 KDF、X25519、HKDF、
   AES-GCM，并自动接管 `/login/account` 的登录 / 注册表单与 `/user` 的改密表单。
@@ -820,7 +874,95 @@ node scripts/auth-client.js reset --base "$BASE" --username alice --old-password
 
 ---
 
-## 13. curl 全流程示例
+## 13. `/multi-api`（批量调用）
+
+在一个 HTTP 请求中按数组顺序调用多个内部 API。子请求各自使用自己的 `auth`，因此同一批次可以混合学生 / 老师 / 管理员身份，权限仍按各自身份分别校验。
+
+兼容别名：`/api/multi-api` 与 `/multi-api` 等价；但作为子请求路径时仍被禁止。
+
+### 请求
+
+```json
+{
+  "apis": [
+    { "api": "/api/health" },
+    { "api": "/api/all-submission", "data": { "auth": "SC-STU-DEMO-2026" } },
+    { "path": "/api/upload", "body": { "auth": "SC-STU-DEMO-2026", "which": "sub_x", "title": "t" } },
+    { "api": "/api/rename-auth", "auth": "SC-TEA-DEMO-2026", "name": "林老师" }
+  ]
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `apis` | array | ✅ | 子请求数组，最多 100 项 |
+| `apis[].api` | string | ✅ | 内部 API 路径；也接受 `path` / `endpoint` / `url` / `route` / `uri` |
+| `apis[].body` | object | — | 子请求 JSON 体；也接受 `params` / `request` / `payload` / `json` |
+| `apis[].data` | object | — | 作为子请求体的简便写法；仅当它是对象时生效 |
+
+路径与请求体的兼容写法：
+
+- 路径可写 `/api/upload`、`api/upload` 或 `upload`，服务端会规范化为 `/api/upload`；query / fragment 会被忽略。
+- 可以直接内联字段：`{"api": "/api/rename-auth", "auth": "...", "name": "..."}`
+  会把除路径字段外的字段作为子请求体。
+- 单个子请求也可以写成字符串 `"/api/health"`，或数组 `["/api/health", {}]`。
+- `data` 作为包装体时必须是对象；上传接口的附件数组请用内联 `data`（数组）或显式 `body`。
+
+### 响应
+
+```json
+{
+  "ok": true,
+  "results": [
+    { "ok": true, "service": "smart-campus", "time": 1792814400 },
+    { "ok": true, "datas": [ ... ] },
+    { "ok": false, "code": "api_not_allowed", "msg": "api is not allowed in multi-api: /api/login-try" }
+  ]
+}
+```
+
+- `results` 的长度与 `apis` 严格一致，索引一一对应。
+- 每个 `results[i]` 都有自己的 `ok`：成功时通常是该 API 的原始响应 JSON；失败时 `ok:false`，带 `msg`，可能带 `code`。
+- 顶层 `ok:true` 只表示批量请求已被处理；即使部分子请求失败，HTTP 状态仍为 `200`，请逐项检查 `results[i].ok`。
+- 顶层请求格式错误（缺少 `apis` / 不是数组）返回 `422`；超过 100 项返回 `400`。
+
+### 禁止调用的接口
+
+为避免一次性挑战、会话状态和 cookie 回传问题，以下接口不能出现在 `apis` 中，命中时返回
+`ok:false` 且 `code:"api_not_allowed"`：
+
+- `/api/login-try`
+- `/api/get-auths`
+- `/api/reset-password`
+- `/api/refresh-key`
+- `/api/multi-api`（禁止嵌套；`/multi-api` 作为路径也会被拒绝）
+
+### 执行顺序与副作用
+
+- 子请求按数组顺序串行执行；前面子请求的写操作对后面的子请求可见。
+- 子请求的 `Set-Cookie` 不会回传给客户端；需要建立浏览器会话的接口请直接调用。
+- `del-object` 在子请求中仍可使用 `/multi-api` 请求本身携带的 `sc_sid` cookie（当子请求未传 `auth` 时）。
+- 每个子请求都是普通 API 调用：该失败的失败、该写库的写库，不会因为同批次其他项失败而回滚。
+
+### 示例
+
+```bash
+curl -s http://localhost:3000/multi-api \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "apis": [
+      {"api": "/api/health"},
+      {"api": "/api/all-submission", "data": {"auth": "SC-STU-DEMO-2026"}},
+      {"api": "/api/rename-auth", "auth": "SC-TEA-DEMO-2026", "name": "林老师"},
+      {"api": "/api/login-try", "username": "student"},
+      {"path": "/api/not-real"}
+    ]
+  }'
+```
+
+---
+
+## 14. curl 全流程示例
 
 ```bash
 BASE=http://localhost:3000
@@ -863,6 +1005,6 @@ curl -s $BASE/api/del-object \
 
 ---
 
-## 14. 页面使用的接口
+## 15. 页面使用的接口
 
 页面本身由服务端渲染，首页、提交、回复、上传、删除、账号中心等交互按需调用上述 API；账号中心的密码、偏好、身份绑定、创建班级使用同源表单 POST（`/user/*`），避免在浏览器中暴露密码到 JSON 请求。上传页在浏览器内使用 `FileReader` 将文件转换为 base64 后调用 `/api/upload`。

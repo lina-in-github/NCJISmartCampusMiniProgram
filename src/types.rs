@@ -301,6 +301,28 @@ pub struct GetAuthsReq {
     pub encrypted_answer: ByteInput,
 }
 
+/// `/api/refresh-key`：账号挑战 + 旧 auth 密钥，用于 auth 泄漏后的密钥轮换。
+#[derive(Deserialize)]
+pub struct RefreshKeyReq {
+    #[serde(
+        rename = "loginSessionID",
+        alias = "login_session_id",
+        alias = "loginSessionId",
+        alias = "id"
+    )]
+    pub login_session_id: String,
+    #[serde(rename = "encryptedAnswer", alias = "encrypted_answer")]
+    pub encrypted_answer: ByteInput,
+    #[serde(rename = "authRefreshing", alias = "auth_refreshing", alias = "auth")]
+    pub auth_refreshing: String,
+}
+
+/// `/multi-api`：批量调用内部 API。
+#[derive(Deserialize)]
+pub struct MultiApiReq {
+    pub apis: Vec<Value>,
+}
+
 #[derive(Deserialize)]
 pub struct ResetPasswordReq {
     #[serde(

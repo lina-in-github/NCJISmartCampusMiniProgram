@@ -977,7 +977,7 @@ pub fn remember_view(st: &AppState, headers: &HeaderMap, view: &str) {
     };
     let db = st.db.lock().unwrap();
     if let Err(e) = db::update_user_prefs(&db, user.id, &display, &prefs) {
-        eprintln!("remember view preference failed: {e}");
+        crate::logging::error("prefs", format!("remember view preference failed: {e}"));
     }
 }
 

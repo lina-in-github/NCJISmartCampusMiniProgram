@@ -92,7 +92,7 @@ cargo build --offline --quiet
 [[ -x "$BIN" ]] || fail "找不到可执行文件 $BIN"
 
 echo "==> 启动临时服务（端口 $PORT，数据库 $TMP/test.db）"
-SC_DB="$TMP/test.db" SC_STRINGS_DIR="$ROOT/strings" SC_STRINGS_DB="$TMP/strings.db" SC_LANG=zh-CN SC_PORT="$PORT" SC_BIND="127.0.0.1:$PORT" "$BIN" >"$TMP/server.log" 2>&1 &
+SC_DB="$TMP/test.db" SC_STRINGS_DIR="$ROOT/strings" SC_STRINGS_DB="$TMP/strings.db" SC_LANG=zh-CN SC_PORT="$PORT" SC_BIND="127.0.0.1:$PORT" SC_LOG_DIR="$TMP/log" SC_LOG_LEVEL=info "$BIN" >"$TMP/server.log" 2>&1 &
 PID=$!
 
 ready=0
@@ -121,6 +121,7 @@ STRING_COUNT="$(sqlite3 "$TMP/strings.db" "SELECT COUNT(*) FROM strings WHERE la
 [[ "$STRING_COUNT" -gt 100 ]] || fail "strings.db 同步数量异常：$STRING_COUNT"
 curl -sS "$BASE/static/strings.js" | grep -q '"title"' || fail "strings.js 未输出"
 curl -sS "$BASE/static/auth.js" | grep -q 'SCAuthCrypto' || fail "auth.js 未输出"
+curl -sS "$BASE/static/auth.js" | grep -q 'wireRefreshKeyDialog' || fail "auth.js 缺少轮换密钥交互"
 
 echo "==> 非对称登录 API（login-try / get-auths / reset-password）"
 LOGIN_TRY="$(post /api/login-try '{"username":"student"}')"
@@ -138,6 +139,26 @@ assert_eq "$(http_code /api/login-try '{"username":"student"}')" "401" "login-tr
 MIGRATE_PUB="$(node "$AUTH_CLIENT" pubkey --username student --password student123 | jq -r .pubkey)"
 assert_jq "$(post /api/upgrade-pubkey "{\"username\":\"student\",\"password\":\"student123\",\"pubkey\":\"$MIGRATE_PUB\"}")" '.ok == true' "旧账号迁移公钥"
 assert_jq "$(account_login student student123)" '.ok == true' "迁移后可登录"
+
+echo "==> 批量 API /multi-api"
+MULTI="$(post /multi-api '{"apis":[
+  {"api":"/api/health"},
+  {"api":"/api/all-submission","data":{"auth":"SC-STU-DEMO-2026"}},
+  {"api":"/api/login-try","username":"student"},
+  {"path":"/api/not-real"},
+  {"api":"/api/download","body":{"auth":"SC-STU-DEMO-2026","which":"sub_missing","match_mode":"All"}}
+]}')"
+assert_jq "$MULTI" '.ok == true and (.results | length) == 5
+  and .results[0].ok == true and .results[0].service == "smart-campus"
+  and .results[1].ok == true and (.results[1].datas | type) == "array"
+  and .results[2].ok == false and .results[2].code == "api_not_allowed"
+  and .results[3].ok == false and .results[3].code == "unsupported_api"
+  and .results[4].ok == false' "multi-api 索引对应 / 禁止两次确认接口"
+assert_jq "$(post /api/multi-api '{"apis":["/api/health"]}')" '.ok == true and .results[0].ok == true' "multi-api 兼容别名"
+assert_jq "$(post /multi-api '{"apis":[]}')" '.ok == true and (.results | length) == 0' "multi-api 空数组"
+assert_eq "$(http_code /multi-api '{}')" "422" "multi-api 缺少 apis"
+TOO_MANY="$(jq -nc '{apis: [range(101) | "/api/health"]}')"
+assert_eq "$(http_code /multi-api "$TOO_MANY")" "400" "multi-api 超过 100 项"
 
 echo "==> 发布征集"
 SUB_JSON="$(post /api/new-submission "{\"auth\":\"$TEACHER\",\"name\":\"冒烟测试征集\",\"desc\":\"自动化测试\",\"type\":\"homework\",\"deadLine\":\"2026-12-31T20:00\"}")"
@@ -376,6 +397,10 @@ USER_HTML="$(curl -sS -b "$USER_COOKIE" "$BASE/user")"
 grep -q "我的班级身份" <<<"$USER_HTML" || fail "账号中心未渲染"
 grep -q "陈小满" <<<"$USER_HTML" || fail "账号中心未显示账号本人"
 grep -q 'data-auth-password' <<<"$USER_HTML" || fail "账号中心缺少非对称改密表单标记"
+grep -q 'data-refresh-key=' <<<"$USER_HTML" || fail "账号中心缺少轮换密钥入口"
+grep -q 'id="refresh-key-dialog"' <<<"$USER_HTML" || fail "账号中心缺少轮换密钥弹窗"
+grep -q "轮换身份密钥" <<<"$USER_HTML" || fail "账号中心轮换密钥文案未渲染"
+if grep -q '@\[strings/' <<<"$USER_HTML"; then fail "账号中心存在未替换的字符串标签"; fi
 
 # 账号会话与角色会话同时存在时，/user 只看 sc_uid，不能串到角色身份。
 # 这里组合「老师账号的 sc_uid」+「学生身份的 sc_sid」，账号中心必须显示老师。
@@ -470,6 +495,16 @@ echo "==> 清理创建的新成员密钥 / 班级"
 post /api/del-key "{\"auth\":\"$NEW_KEY2\"}" >/dev/null || true
 assert_jq "$(post /api/del-object "{\"auth\":\"$CLASS_KEY\",\"id\":\"$CLASS\"}")" '.ok == true' "删除班级"
 assert_eq "$(http_code /api/all-submission "{\"auth\":\"$CLASS_KEY\"}")" "401" "班级删除后密钥失效"
+
+echo "==> 日志系统"
+curl -sS -o /dev/null "$BASE/log-404-probe" || true
+LOG_FILE="$(ls "$TMP/log"/app-*.log 2>/dev/null | head -1)"
+[[ -f "$LOG_FILE" ]] || fail "日志文件未生成"
+grep -q '\[INFO\] \[boot\]' "$LOG_FILE" || fail "缺少启动日志"
+grep -q 'GET /login/account -> 200' "$LOG_FILE" || fail "缺少请求日志"
+grep -q '\[WARN\] \[http\] GET /log-404-probe -> 404' "$LOG_FILE" || fail "缺少 404 警告日志"
+if grep -q "$STUDENT" "$LOG_FILE"; then fail "日志不应包含 auth 密钥"; fi
+if grep -q '/static/app.css' "$LOG_FILE"; then fail "静态资源不应写入 info 日志"; fi
 
 echo
 echo "PASS: 智慧校园冒烟测试全部通过 ✅"

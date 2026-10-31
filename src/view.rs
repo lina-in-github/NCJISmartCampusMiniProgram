@@ -118,6 +118,9 @@ pub fn icon(name: &str) -> &'static str {
         "sparkles" => {
             r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 13.8 9l5.7 1.8-5.7 1.8L12 18l-1.8-5.4L4.5 10.8 10.2 9Z"/><path d="M19 3v3M20.5 4.5h-3M5 17v3M6.5 18.5h-3"/></svg>"#
         }
+        "refresh" => {
+            r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M20.5 3.5V9H15"/></svg>"#
+        }
         "alert" => {
             r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19Z"/><path d="M12 9v5M12 17.5h.01"/></svg>"#
         }
@@ -571,7 +574,7 @@ fn page_footer() -> String {
   </div>
   <img alt="@[strings/common_attachment_preview]">
 </dialog>
-<script src="/static/strings.js?v=6"></script><script src="/static/app.js?v=6"></script><script src="/static/auth.js?v=6"></script>
+<script src="/static/strings.js?v=6"></script><script src="/static/app.js?v=6"></script><script src="/static/auth.js?v=7"></script>
 </body>
 </html>"#
     )
@@ -2032,7 +2035,7 @@ pub fn user_guest(
         prefill_key = esc(prefill_key)
     );
     let mut out = document_head("@[strings/role_account]", "system");
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=6"></script><script src="/static/app.js?v=6"></script><script src="/static/auth.js?v=6"></script></body></html>"#));
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=6"></script><script src="/static/app.js?v=6"></script><script src="/static/auth.js?v=7"></script></body></html>"#));
     out
 }
 
@@ -2154,6 +2157,7 @@ pub fn user_account(
                     full = esc(&a.key),
                     masked = esc(&masked),
                     copy = icon("copy"),
+                    refresh = icon("refresh"),
                     id = esc(&a.id),
                     arrow = icon("arrow-right"),
                     trash = icon("trash"),
@@ -2235,6 +2239,7 @@ pub fn user_account(
         shield = icon("shield"),
         logout = icon("logout"),
         plus = icon("plus"),
+        copy = icon("copy"),
 
         auths = auths_html,
         admin_area = admin_area

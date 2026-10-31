@@ -1,4 +1,5 @@
 use axum::{
+    body::to_bytes,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -18,9 +19,9 @@ use crate::tools::{
 };
 use crate::types::{
     AllSubmissionReq, AppState, AuthCtx, ByteInput, DelKeyReq, DelObjectReq, DownloadReq,
-    GetAuthsReq, LoginSession, LoginTryReq, NewClassReq, NewSubmissionReq, NewUserReq,
-    RegisterReq, RenameAuthReq, ReplyReq, ResetPasswordReq, SubmissionRow, UpgradePubkeyReq,
-    UploadReq,
+    GetAuthsReq, LoginSession, LoginTryReq, MultiApiReq, NewClassReq, NewSubmissionReq, NewUserReq,
+    RefreshKeyReq, RegisterReq, RenameAuthReq, ReplyReq, ResetPasswordReq, SubmissionRow,
+    UpgradePubkeyReq, UploadReq,
 };
 
 const MAX_TITLE: usize = 200;
@@ -771,6 +772,55 @@ pub async fn get_auths(
     with_cookie(res, cookie)
 }
 
+/// `/api/refresh-key`：验证账号挑战后轮换 auth 密钥（auth 泄漏处置）。
+///
+/// 新 auth 继承旧 auth 的全部身份数据与历史数据；旧 auth 会被删除，
+/// 因此旧密钥与绑在旧 auth 上的角色会话立即失效。
+pub async fn refresh_key(State(st): State<AppState>, Json(req): Json<RefreshKeyReq>) -> Response {
+    let session = match verify_login_answer(&st, &req.login_session_id, &req.encrypted_answer) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let old_key = req.auth_refreshing.trim();
+    if old_key.is_empty() {
+        return api_bad("authRefreshing must not be empty");
+    }
+
+    let (old_auth_id, new_auth) = {
+        let db = st.db.lock().unwrap();
+        let Some(auth) = db::load_auth_by_key(&db, old_key) else {
+            return api_error_code(
+                StatusCode::UNAUTHORIZED,
+                "invalid or expired auth",
+                "auth_invalid",
+            );
+        };
+        match auth.user_id {
+            Some(uid) if uid == session.user_id => {}
+            Some(_) => return api_forbidden("auth belongs to another account"),
+            None => return api_forbidden("auth is not bound to an account"),
+        }
+        match db::refresh_auth(&db, &auth, session.user_id) {
+            Ok(new_auth) => (auth.id.clone(), new_auth),
+            Err(e) => {
+                return crate::tools::api_err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("refresh key failed: {e}"),
+                )
+            }
+        }
+    };
+
+    // 旧密钥已删除；同时作废旧角色会话和该账号的一次性挑战，避免重放。
+    invalidate_auth_sessions(&st, &old_auth_id);
+    st.login_sessions
+        .lock()
+        .unwrap()
+        .retain(|_, s| s.user_id != session.user_id);
+
+    api_ok(json!({ "ok": true, "newAuth": new_auth }))
+}
+
 /// `/api/register`：提交用户名 + 公钥创建账号（可选绑定一个未认领的班级密钥）。
 pub async fn register(State(st): State<AppState>, Json(req): Json<RegisterReq>) -> Response {
     let username = req.username.trim();
@@ -947,9 +997,308 @@ pub async fn upgrade_pubkey(
 }
 
 // ---------------------------------------------------------------------------
+// /multi-api：批量调用
+// ---------------------------------------------------------------------------
+
+/// 单次批量调用允许的最大子请求数。
+const MAX_MULTI_APIS: usize = 100;
+const MULTI_API_PATH_KEYS: &[&str] = &["api", "path", "endpoint", "url", "route", "uri"];
+const MULTI_API_BODY_KEYS: &[&str] = &["body", "params", "request", "payload", "json"];
+/// 需要两次确认 / 依赖一次性挑战的接口不能放进批量调用。
+const MULTI_API_BLOCKED: &[&str] = &[
+    "/api/login-try",
+    "/api/get-auths",
+    "/api/reset-password",
+    "/api/refresh-key",
+    "/api/multi-api",
+];
+
+/// `/multi-api`：按数组顺序依次调用内部 API，结果索引与 `apis` 严格对应。
+pub async fn multi_api(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<MultiApiReq>,
+) -> Response {
+    if req.apis.len() > MAX_MULTI_APIS {
+        return api_bad(format!(
+            "too many api calls in one batch (max {MAX_MULTI_APIS})"
+        ));
+    }
+    let mut results = Vec::with_capacity(req.apis.len());
+    for item in req.apis {
+        results.push(run_multi_api_item(&st, &headers, item).await);
+    }
+    api_ok(json!({ "ok": true, "results": results }))
+}
+
+async fn run_multi_api_item(st: &AppState, headers: &HeaderMap, item: Value) -> Value {
+    let (path, body) = match parse_multi_api_item(item) {
+        Ok(parsed) => parsed,
+        Err(e) => return multi_api_error(e, "invalid_request"),
+    };
+    if MULTI_API_BLOCKED.contains(&path.as_str()) {
+        return multi_api_error(
+            format!("api is not allowed in multi-api: {path}"),
+            "api_not_allowed",
+        );
+    }
+    let response = dispatch_multi_api(st, headers, &path, body).await;
+    response_to_json(response).await
+}
+
+fn multi_api_error(msg: impl Into<String>, code: &str) -> Value {
+    json!({ "ok": false, "msg": msg.into(), "code": code })
+}
+
+/// 解析单个 `apis` 元素。支持：
+///   * `{"api": "/api/xxx", "body": {...}}`（也接受 data / params / request / payload / json）
+///   * `{"api": "/api/xxx", ...直接书写请求字段...}`
+///   * `"/api/xxx"` 或 `["/api/xxx", {...}]`
+fn parse_multi_api_item(item: Value) -> Result<(String, Value), String> {
+    match item {
+        Value::String(path) => Ok((normalize_multi_api_path(&path)?, json!({}))),
+        Value::Array(mut parts) => {
+            if parts.is_empty() {
+                return Err("api item array must not be empty".to_string());
+            }
+            let path = parts.remove(0);
+            let path = path
+                .as_str()
+                .ok_or_else(|| "api item path must be a string".to_string())?;
+            let path = normalize_multi_api_path(path)?;
+            let body = if parts.is_empty() {
+                json!({})
+            } else {
+                parts.remove(0)
+            };
+            if !parts.is_empty() {
+                return Err("api item array must be [path, body]".to_string());
+            }
+            Ok((path, body))
+        }
+        Value::Object(map) => {
+            let path = MULTI_API_PATH_KEYS
+                .iter()
+                .find_map(|k| map.get(*k).and_then(Value::as_str))
+                .ok_or_else(|| "api item must contain an api/path field".to_string())?;
+            let path = normalize_multi_api_path(path)?;
+            let body = if let Some(body) = MULTI_API_BODY_KEYS.iter().find_map(|k| map.get(*k)) {
+                body.clone()
+            } else if let Some(data) = map.get("data").filter(|v| v.is_object()) {
+                // `data: {...}` 作为显式请求体；数组形式的 data 视为上传附件等内联字段。
+                data.clone()
+            } else {
+                let mut inline = map;
+                for k in MULTI_API_PATH_KEYS {
+                    inline.remove(*k);
+                }
+                Value::Object(inline)
+            };
+            Ok((path, body))
+        }
+        _ => Err("each api item must be an object, string or [path, body] array".to_string()),
+    }
+}
+
+fn normalize_multi_api_path(raw: &str) -> Result<String, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err("api path must not be empty".to_string());
+    }
+    if raw.starts_with("http://") || raw.starts_with("https://") || raw.starts_with("//") {
+        return Err("only internal api paths are allowed".to_string());
+    }
+    let path = raw
+        .split(|c: char| c == '?' || c == '#')
+        .next()
+        .unwrap_or(raw)
+        .trim_end_matches('/');
+    if path.is_empty() {
+        return Err("api path must not be empty".to_string());
+    }
+    let path = if path.starts_with("/api/") {
+        path.to_string()
+    } else if path.starts_with("api/") {
+        format!("/{path}")
+    } else if path.starts_with('/') {
+        return Err(format!("unsupported api path: {raw}"));
+    } else {
+        format!("/api/{path}")
+    };
+    Ok(path)
+}
+
+async fn dispatch_multi_api(
+    st: &AppState,
+    headers: &HeaderMap,
+    path: &str,
+    body: Value,
+) -> Response {
+    macro_rules! call {
+        ($ty:ty, $handler:path) => {
+            match serde_json::from_value::<$ty>(body) {
+                Ok(req) => $handler(State(st.clone()), Json(req)).await,
+                Err(e) => api_error_code(
+                    StatusCode::BAD_REQUEST,
+                    format!("invalid request body for {path}: {e}"),
+                    "invalid_request",
+                ),
+            }
+        };
+    }
+
+    match path {
+        "/api/upload" => call!(UploadReq, upload),
+        "/api/download" => call!(DownloadReq, download),
+        "/api/new-submission" => call!(NewSubmissionReq, new_submission),
+        "/api/all-submission" => call!(AllSubmissionReq, all_submission),
+        "/api/reply" => call!(ReplyReq, reply),
+        "/api/new-class" => call!(NewClassReq, new_class),
+        "/api/new-user" => call!(NewUserReq, new_user),
+        "/api/del-key" => call!(DelKeyReq, del_key),
+        "/api/rename-auth" => call!(RenameAuthReq, rename_auth),
+        "/api/del-object" => match serde_json::from_value::<DelObjectReq>(body) {
+            Ok(req) => del_object(State(st.clone()), headers.clone(), Json(req)).await,
+            Err(e) => api_error_code(
+                StatusCode::BAD_REQUEST,
+                format!("invalid request body for {path}: {e}"),
+                "invalid_request",
+            ),
+        },
+        "/api/register" => call!(RegisterReq, register),
+        "/api/upgrade-pubkey" => call!(UpgradePubkeyReq, upgrade_pubkey),
+        "/api/health" => health().await,
+        _ => api_error_code(
+            StatusCode::NOT_FOUND,
+            format!("unsupported api path: {path}"),
+            "unsupported_api",
+        ),
+    }
+}
+
+async fn response_to_json(response: Response) -> Value {
+    let status = response.status();
+    let bytes = match to_bytes(response.into_body(), usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return multi_api_error(
+                format!("failed to read api response: {e}"),
+                "response_failed",
+            )
+        }
+    };
+    match serde_json::from_slice::<Value>(&bytes) {
+        Ok(Value::Object(mut map)) => {
+            map.entry("ok".to_string())
+                .or_insert(Value::Bool(status.is_success()));
+            Value::Object(map)
+        }
+        Ok(other) => json!({ "ok": status.is_success(), "data": other }),
+        Err(_) => json!({
+            "ok": status.is_success(),
+            "msg": "api returned a non-json response",
+            "body": String::from_utf8_lossy(&bytes),
+        }),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 健康检查（便于部署探活）
 // ---------------------------------------------------------------------------
 
 pub async fn health() -> Response {
     api_ok(json!({ "ok": true, "service": "smart-campus", "time": now_ts() }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multi_api_item_parsing() {
+        let (path, body) = parse_multi_api_item(json!({
+            "api": "/api/all-submission",
+            "data": { "auth": "SC-STU-DEMO-2026" }
+        }))
+        .unwrap();
+        assert_eq!(path, "/api/all-submission");
+        assert_eq!(body, json!({ "auth": "SC-STU-DEMO-2026" }));
+
+        let (path, body) = parse_multi_api_item(json!({
+            "path": "upload",
+            "body": { "auth": "SC-STU-DEMO-2026", "which": "sub_x" }
+        }))
+        .unwrap();
+        assert_eq!(path, "/api/upload");
+        assert_eq!(
+            body,
+            json!({ "auth": "SC-STU-DEMO-2026", "which": "sub_x" })
+        );
+
+        // 内联字段（上传的 data 是数组，因此保留为请求字段而不是包装体）。
+        let (path, body) = parse_multi_api_item(json!({
+            "api": "/api/upload",
+            "auth": "SC-STU-DEMO-2026",
+            "which": "sub_x",
+            "title": "t",
+            "data": []
+        }))
+        .unwrap();
+        assert_eq!(path, "/api/upload");
+        assert_eq!(
+            body.get("auth").and_then(Value::as_str),
+            Some("SC-STU-DEMO-2026")
+        );
+        assert!(body.get("data").is_some());
+
+        let (path, body) = parse_multi_api_item(json!(["/api/health"])).unwrap();
+        assert_eq!(path, "/api/health");
+        assert_eq!(body, json!({}));
+
+        let (path, body) = parse_multi_api_item(json!(["api/health", { "x": 1 }])).unwrap();
+        assert_eq!(path, "/api/health");
+        assert_eq!(body, json!({ "x": 1 }));
+
+        assert!(parse_multi_api_item(json!({ "auth": "x" })).is_err());
+        assert!(parse_multi_api_item(json!(42)).is_err());
+        assert!(parse_multi_api_item(json!("https://example.com/api")).is_err());
+    }
+
+    #[test]
+    fn multi_api_path_normalization() {
+        assert_eq!(
+            normalize_multi_api_path("/api/all-submission/").unwrap(),
+            "/api/all-submission"
+        );
+        assert_eq!(
+            normalize_multi_api_path("api/all-submission").unwrap(),
+            "/api/all-submission"
+        );
+        assert_eq!(
+            normalize_multi_api_path("all-submission").unwrap(),
+            "/api/all-submission"
+        );
+        assert_eq!(
+            normalize_multi_api_path("/api/health?probe=1").unwrap(),
+            "/api/health"
+        );
+        assert!(normalize_multi_api_path("   ").is_err());
+        assert!(normalize_multi_api_path("/multi-api").is_err());
+        assert!(normalize_multi_api_path("https://example.com/api/health").is_err());
+    }
+
+    #[test]
+    fn multi_api_blocks_two_step_endpoints() {
+        for path in [
+            "/api/login-try",
+            "/api/get-auths",
+            "/api/reset-password",
+            "/api/refresh-key",
+            "/api/multi-api",
+        ] {
+            assert!(MULTI_API_BLOCKED.contains(&path));
+        }
+        assert!(!MULTI_API_BLOCKED.contains(&"/api/health"));
+        assert!(!MULTI_API_BLOCKED.contains(&"/api/all-submission"));
+    }
 }
