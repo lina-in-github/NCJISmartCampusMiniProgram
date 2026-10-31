@@ -119,7 +119,11 @@ assert_eq "$code" "303" "根路径跳转"
 [[ -f "$TMP/strings.db" ]] || fail "strings.db 未生成"
 STRING_COUNT="$(sqlite3 "$TMP/strings.db" "SELECT COUNT(*) FROM strings WHERE language = 'zh-CN';")"
 [[ "$STRING_COUNT" -gt 100 ]] || fail "strings.db 同步数量异常：$STRING_COUNT"
-curl -sS "$BASE/static/strings.js" | grep -q '"title"' || fail "strings.js 未输出"
+STRINGS_JS="$(curl -sS "$BASE/static/strings.js")"
+grep -q '"title"' <<<"$STRINGS_JS" || fail "strings.js 未输出"
+grep -q '"flash_class_create_failed"' <<<"$STRINGS_JS" || fail "strings.js 缺少创建班级失败文案"
+grep -q '"account_delete_confirm"' <<<"$STRINGS_JS" || fail "strings.js 缺少删除身份确认文案"
+grep -q '"flash_login_challenge_expired"' <<<"$STRINGS_JS" || fail "strings.js 缺少挑战过期文案"
 curl -sS "$BASE/static/auth.js" | grep -q 'SCAuthCrypto' || fail "auth.js 未输出"
 curl -sS "$BASE/static/auth.js" | grep -q 'wireRefreshKeyDialog' || fail "auth.js 缺少轮换密钥交互"
 
@@ -400,6 +404,8 @@ grep -q 'data-auth-password' <<<"$USER_HTML" || fail "账号中心缺少非对�
 grep -q 'data-refresh-key=' <<<"$USER_HTML" || fail "账号中心缺少轮换密钥入口"
 grep -q 'id="refresh-key-dialog"' <<<"$USER_HTML" || fail "账号中心缺少轮换密钥弹窗"
 grep -q "轮换身份密钥" <<<"$USER_HTML" || fail "账号中心轮换密钥文案未渲染"
+grep -q 'data-confirm="确定删除' <<<"$USER_HTML" || fail "账号中心删除身份确认文案未渲染"
+if grep -q 'data-confirm="account_delete_confirm"' <<<"$USER_HTML"; then fail "账号中心存在未替换的删除确认文案"; fi
 if grep -q '@\[strings/' <<<"$USER_HTML"; then fail "账号中心存在未替换的字符串标签"; fi
 
 # 账号会话与角色会话同时存在时，/user 只看 sc_uid，不能串到角色身份。
@@ -451,7 +457,9 @@ TEA_USER_COOKIE="$(jq -r .cookie <<<"$TEA_USER_LOGIN")"
 ACCOUNT_HTML="$(curl -sS -b "$TEA_USER_COOKIE" "$BASE/user")"
 grep -q 'data-rename=' <<<"$ACCOUNT_HTML" || fail "账号中心缺少改名入口"
 if grep -q '@\[strings/' <<<"$ACCOUNT_HTML"; then fail "账号中心存在未替换的字符串标签"; fi
-curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/upload/$UP/" | grep -q "$NEW_TEACHER_NAME" || fail "改名未同步历史回复人"
+TEACHER_UPLOAD_HTML="$(curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/upload/$UP/")"
+grep -q "$NEW_TEACHER_NAME" <<<"$TEACHER_UPLOAD_HTML" || fail "改名未同步历史回复人"
+if grep -q '"<div class="reply"' <<<"$TEACHER_UPLOAD_HTML"; then fail "回复列表存在多余引号"; fi
 
 RENAME_S="$(post /api/rename-auth "{\"auth\":\"$STUDENT\",\"name\":\"$NEW_STUDENT_NAME\"}")"
 assert_jq "$RENAME_S" ".ok == true and .name == \"$NEW_STUDENT_NAME\"" "rename-auth 学生"

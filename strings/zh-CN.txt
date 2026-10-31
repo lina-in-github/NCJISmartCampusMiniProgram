@@ -96,11 +96,11 @@ name=login_hero_eyebrow lines=0 content=SMART CAMPUS
 name=login_hero_login_title lines=0 content=面向班级的简单管理工具
 name=login_hero_login_desc lines=0 content=面向班级的简单管理工具
 name=login_hero_account_title lines=0 content=一个账号，可连接多个班级身份
-name=login_hero_account_desc lines=0 content=可绑定多个班级密钥，随时切换用户。在偏好设置中查看自己拥有的全部身份。
+name=login_hero_account_desc lines=0 content=可绑定多个班级密钥，随时切换身份。在账号中心查看自己拥有的全部身份。
 name=login_feature_class lines=0 content=班级征集
 name=login_feature_files lines=0 content=附件归档
 name=login_feature_reply lines=0 content=及时回复
-name=login_feature_session lines=0 content=HttpOnly 会话
+name=login_feature_session lines=0 content=安全会话
 name=login_feature_keys lines=0 content=多班级密钥
 name=login_feature_prefs lines=0 content=偏好设置
 name=login_hero_year lines=0 content=2026
@@ -123,9 +123,9 @@ name=login_admin_page_title lines=0 content=管理员登录
 name=login_admin_page_desc lines=0 content=使用管理员密钥登录
 name=login_student_page_title lines=0 content=学生登录
 name=login_student_page_desc lines=0 content=使用学生密钥进入班级
-name=login_placeholder lines=0 content=例如 SC-STU-XXXX-XXXX
-name=login_placeholder_teacher lines=0 content=例如 SC-TEA-XXXX-XXXX
-name=login_placeholder_admin lines=0 content=例如 SC-ADM-XXXX-XXXX
+name=login_placeholder lines=0 content=例如 SC-STU-XXXXXXXX
+name=login_placeholder_teacher lines=0 content=例如 SC-TEA-XXXXXXXX
+name=login_placeholder_admin lines=0 content=例如 SC-ADM-XXXXXXXX
 name=login_demo_teacher lines=0 content=老师演示密钥
 name=login_demo_admin lines=0 content=管理员演示密钥
 name=login_demo_parent lines=0 content=学生 / 家长演示密钥
@@ -182,7 +182,7 @@ name=stat_my_uploads lines=0 content=我的提交
 name=stat_child_uploads lines=0 content=孩子提交
 name=stat_replies_received lines=0 content=收到回复
 name=submissions_page_title lines=0 content=班级征集
-name=submissions_page_sub lines=0 content={} 个征集 · 单位：{}
+name=submissions_page_sub lines=0 content={} 个征集 · 范围：{}
 name=submissions_unit_class lines=0 content=班级
 name=submissions_unit_person lines=0 content=本人
 name=submissions_unit_child lines=0 content=孩子
@@ -260,7 +260,7 @@ name=upload_no_attachments lines=0 content=该上传没有附件。
 name=upload_attachments_title lines=0 content=附件与内容
 name=upload_preview_aria lines=0 content=预览附件 {}
 name=upload_replies lines=0 content=回复
-name=upload_reply_role_hint lines=0 content=老师 / 管理员
+name=upload_reply_role_hint lines=0 content=仅老师 / 管理员可回复
 name=upload_reply_placeholder lines=0 content=写下对这份提交的回复……
 name=upload_reply_publish lines=0 content=发布回复
 name=upload_reply_note lines=0 content=回复会立即展示给提交人和家长
@@ -296,7 +296,7 @@ name=upload_form_published_at lines=0 content=发布时间
 name=upload_form_existing lines=0 content=你已为这个征集提交过 {} 次，本次会作为新的上传保留。
 name=upload_form_existing_parent lines=0 content=孩子已为这个征集提交过 {} 次，本次会作为新的上传保留。
 name=upload_form_first lines=0 content=这是你在本征集的第一次提交。
-name=upload_form_first_parent lines=0 content=这是孩子在本次征集的第一次提交。
+name=upload_form_first_parent lines=0 content=这是孩子在本征集的第一次提交。
 name=upload_form_last_link lines=0 content=查看上一次提交
 name=upload_form_tip lines=0 content=提示：截止后仍可补交，老师会看到每次提交的时间。
 name=survey_form_page_title lines=0 content=填写问卷「{}」
@@ -344,7 +344,7 @@ name=account_theme_system lines=0 content=跟随系统
 name=account_theme_light lines=0 content=浅色
 name=account_theme_dark lines=0 content=深色
 name=account_view_mode lines=0 content=显示模式（学生身份）
-name=account_view_mode_hint lines=0 content=学生身份可在「学生视角（我）」与「家长视角（孩子）」之间切换，只影响界面文案；数据范围仍由班级密钥决定，API 不变。
+name=account_view_mode_hint lines=0 content=学生身份可在「学生视角（我）」与「家长视角（孩子）」之间切换，只影响界面文案；能看到的数据完全相同。
 name=account_save_prefs lines=0 content=保存偏好
 name=account_security lines=0 content=登录与安全
 name=account_current_password lines=0 content=当前密码
@@ -375,7 +375,8 @@ name=account_member_hint lines=0 content=生成密钥时会使用该身份所在
 name=account_copy_key lines=0 content=复制密钥
 name=account_rename_identity lines=0 content=为此身份改名
 name=account_delete_identity lines=0 content=删除该身份
-name=account_delete_confirm_label lines=0 content=删除密钥
+name=account_delete_confirm_label lines=0 content=删除身份
+name=account_delete_confirm lines=0 content=确定删除「{}」中的{}身份吗？此操作不可撤销。
 name=account_rename_title lines=0 content=为身份改名
 name=account_rename_desc lines=0 content=新名称会显示在该班级的提交、回复与页面身份信息中。
 name=account_rename_label lines=0 content=新名称
@@ -384,7 +385,7 @@ name=account_refresh_key lines=0 content=轮换密钥
 name=account_refresh_key_panel_hint lines=0 content=密钥只对你可见；泄漏时可点击身份右侧的轮换图标
 name=account_refresh_key_title lines=0 content=轮换身份密钥
 name=account_refresh_key_desc lines=0 content=用于密钥泄漏处置。验证账号密码后，将为该身份生成新密钥；新密钥继承该身份的全部班级数据，旧密钥立即失效。
-name=account_refresh_key_hint lines=0 content=请输入当前账号密码，用于完成一次性挑战验证。
+name=account_refresh_key_hint lines=0 content=请输入当前账号密码，用于确认是你本人操作。
 name=account_refresh_key_confirm lines=0 content=确认轮换
 name=account_refresh_key_working lines=0 content=正在验证并轮换…
 name=account_refresh_key_done_title lines=0 content=新密钥已生成
@@ -417,6 +418,7 @@ name=flash_account_missing lines=0 content=账号不存在
 name=flash_current_password_wrong lines=0 content=当前密码不正确
 name=flash_password_changed lines=0 content=密码已修改
 name=flash_class_created lines=0 content=班级已创建，新的管理员密钥已加入你的身份列表
+name=flash_class_create_failed lines=0 content=创建班级失败，请稍后重试
 name=flash_teacher_only_publish lines=0 content=仅老师或管理员可以发布征集
 name=flash_welcome lines=0 content=欢迎回来
 name=flash_logged_out lines=0 content=已退出登录
@@ -434,7 +436,7 @@ name=error_page_missing lines=0 content=页面不存在。
 name=error_back_home lines=0 content=返回首页
 name=toast_copy_ok lines=0 content=已复制
 name=toast_copy_failed lines=0 content=复制失败，请手动选择
-name=toast_confirm_default lines=0 content=确认操作？
+name=toast_confirm_default lines=0 content=确认执行此操作？
 name=toast_upload_limit lines=0 content=最多上传 {} 个附件
 name=toast_upload_limit_reached lines=0 content=已达到附件数量上限（{} 个）
 name=toast_upload_too_large lines=0 content=附件总大小不能超过 18MB
@@ -476,6 +478,7 @@ name=flash_admin_only_create_class lines=0 content=只有管理员身份可以�
 name=flash_display_name_too_long lines=0 content=显示名称最多 40 个字
 name=flash_request_failed lines=0 content=请求失败，请稍后重试
 name=flash_login_expired lines=0 content=登录已失效，请重新登录
+name=flash_login_challenge_expired lines=0 content=验证已过期，请重试
 name=flash_forbidden lines=0 content=没有权限执行该操作
 name=flash_server_error lines=0 content=服务器开小差了，请稍后重试
 name=avatar_fallback lines=0 content=校
@@ -488,7 +491,7 @@ name=identity_student_id lines=0 content=学生 {}
 name=student_no_full lines=0 content={} · {} 号
 name=student_no_short lines=0 content={} 号
 
-name=account_password_local lines=0 content=密码只在本机派生登录密钥，正常登录不会发送到服务器；旧账号首次登录会做一次公钥迁移。
+name=account_password_local lines=0 content=密码只在本机派生登录私钥，正常登录不会发送到服务器；旧账号首次登录会做一次公钥迁移。
 name=flash_js_required lines=0 content=该操作需要使用 JavaScript 在浏览器内完成。
 name=flash_pubkey_missing lines=0 content=该账号尚未完成公钥迁移，请重试或联系管理员。
 name=flash_pubkey_invalid lines=0 content=公钥格式无效，请重新输入。

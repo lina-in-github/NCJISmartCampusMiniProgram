@@ -432,6 +432,8 @@
     }
     if (err && err.status === 401) {
       if (err.code === "pubkey_missing") return S("flash_pubkey_missing");
+      var authMessage = String(err.message || "");
+      if (authMessage.indexOf("session") >= 0) return S("flash_login_challenge_expired");
       return S("flash_wrong_credentials");
     }
     if (err && err.status === 400) {
@@ -606,7 +608,7 @@
   function refreshKeyError(err) {
     if (err && err.message === "PASSWORD_REQUIRED") return S("flash_wrong_credentials");
     if (err && err.code === "auth_invalid") return S("flash_refresh_key_invalid");
-    if (err && err.status === 401) return S("flash_wrong_credentials");
+    if (err && err.status === 401) return friendlyError(err);
     if (err && err.status === 403) return S("flash_refresh_key_forbidden");
     if (err && err.status === 400) return S("flash_refresh_key_invalid");
     return friendlyError(err);
