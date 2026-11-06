@@ -26,12 +26,19 @@
           {special_group}
           {mode_options}
         </select>
+        <label class="check"><input type="checkbox" id="sub-type-manual"> @[strings/new_type_manual]</label>
         {mode_hint}
       </div>
       <div class="field">
         <label class="label" for="sub-deadline">@[strings/new_deadline_label]</label>
         <input class="input" id="sub-deadline" name="deadline" type="datetime-local" value="{default_deadline}">
         <label class="check"><input type="checkbox" id="no-deadline"> @[strings/new_no_deadline]</label>
+      </div>
+      <div class="field full" id="sub-type-manual-field" hidden>
+        <label class="label" for="sub-type-manual-name">@[strings/new_type_manual_name] <span class="req">*</span></label>
+        <input class="input" id="sub-type-manual-name" type="text" maxlength="60"
+               placeholder="@[strings/new_type_manual_placeholder]">
+        <span class="hint">@[strings/new_type_manual_hint]</span>
       </div>
       <div class="field full">
         <label class="label" for="sub-desc">@[strings/new_desc_label]</label>

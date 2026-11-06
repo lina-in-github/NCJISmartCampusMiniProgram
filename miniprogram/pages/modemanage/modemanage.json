@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "征集类型",
+  "usingComponents": {
+    "confirm-dialog": "/components/confirm-dialog/index"
+  }
+}

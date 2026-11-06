@@ -691,6 +691,64 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 
 ---
 
+## 4.6 `/api/del-mode`（管理员：删除班级自定义征集模式）
+
+删除本班通过 `/api/new-mode` 创建的模式。内置模式不能删除；删除只影响模式的复用与显示，
+不会级联删除已经发布的征集。
+
+### 请求
+
+```json
+{ "auth": "SC-ADM-DEMO-2026", "id": "mode_xxxxxxxxxxxx" }
+```
+
+也支持按模式名 / 显示名称删除：
+
+```json
+{ "auth": "SC-ADM-DEMO-2026", "modeName": "maths multiple-choise homework" }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `auth` | string | ✅ | 管理员密钥 |
+| `id` | string | — | 模式 ID（`mode_*`）；与 `modeName` 至少填一个 |
+| `modeName` | string | — | 模式名称；也接受 `mode_name` / `name`，以及创建时填写的 `displayName` |
+| `force` | bool | — | 仍有征集引用该模式时是否强制删除，默认 `false` |
+
+### 响应（成功）
+
+```json
+{
+  "ok": true,
+  "success": true,
+  "msg": "submission mode deleted",
+  "id": "mode_xxxxxxxxxxxx",
+  "modeName": "maths multiple-choise homework",
+  "displayName": "数学选择题作业",
+  "extendModes": ["homework", "answer sheet"],
+  "baseType": "answer sheet",
+  "flags": { "hidden": false, "teacherOnly": false, "adminOnly": false, "invisible": false, "separateList": false, "abstract": false },
+  "deleted": { "id": "mode_xxxxxxxxxxxx", "modeName": "maths multiple-choise homework", "builtin": false, "inheritModes": ["..."] }
+}
+```
+
+### 约束与错误
+
+| 场景 | HTTP | msg |
+| --- | --- | --- |
+| 非管理员 | 403 | `only admins can delete submission modes` |
+| 缺少 `id` 与 `modeName` | 400 | `id or modeName is required` |
+| 删除内置模式 | 400 | `builtin submission modes cannot be deleted: ...` |
+| 仍被其他模式继承 | 400 | `submission mode is inherited by other modes: ...` |
+| 仍有征集引用且未传 `force` | 400 | `submission mode is still used by N submission(s); pass force=true to delete anyway` |
+| 模式不存在或不属于当前班级 | 404 | `submission mode not found` |
+
+- 删除前请先删除或改造继承该模式的子模式；继承链不会自动级联。
+- `force:true` 删除后，已有征集仍保留 `type` 与 `baseType`，问卷 / 答题卡 / 公示行为不变；
+  但这些征集不再继承被删模式的 `displayName` 与可见性属性。
+
+---
+
 ## 5. `/api/reply`
 
 回复一条提交（**老师 / 管理员**）。
@@ -886,6 +944,7 @@ curl -s http://localhost:3000/api/rename-auth \
 | `rep_` | 回复 | 仅删除该回复 |
 | `cls_` | 班级 | 仅能删除自己当前管理的班级，级联删除班级数据 |
 | `auth_` | 身份密钥 | 仅能删除当前班级的 auth |
+| `mode_` | 征集模式 | 删除班级自定义模式；与 `/api/del-mode` 相同，可传 `force` |
 
 ### 响应
 
@@ -1216,7 +1275,7 @@ node scripts/auth-client.js reset --base "$BASE" --username alice --old-password
 - 可以直接内联字段：`{"api": "/api/rename-auth", "auth": "...", "name": "..."}`
   会把除路径字段外的字段作为子请求体。
 - 本次新增的 `/api/my-uploads`、`/api/my-submissions`、`/api/pending-uploads`、
-  `/api/new-mode`、`/api/all-modes` 都可以作为子请求；它们不在禁止列表中。
+  `/api/new-mode`、`/api/all-modes`、`/api/del-mode` 都可以作为子请求；它们不在禁止列表中。
 - 单个子请求也可以写成字符串 `"/api/health"`，或数组 `["/api/health", {}]`。
 - `data` 作为包装体时必须是对象；上传接口的附件数组请用内联 `data`（数组）或显式 `body`。
 
@@ -1310,6 +1369,11 @@ curl -s $BASE/api/all-submission \
 curl -s $BASE/api/del-object \
   -H 'Content-Type: application/json' \
   -d "{\"auth\":\"SC-ADM-DEMO-2026\",\"id\":\"$SUB\"}"
+
+# 7. 管理员删除自定义征集模式（未被继承且未被引用时）
+curl -s $BASE/api/del-mode \
+  -H 'Content-Type: application/json' \
+  -d '{"auth":"SC-ADM-DEMO-2026","modeName":"maths multiple-choise homework"}'
 ```
 
 问卷与答题卡征集（`type: "survey"` / `"answer sheet"`）的提交见 [1.1 问卷模式](#11-问卷模式survey)
@@ -1320,3 +1384,7 @@ curl -s $BASE/api/del-object \
 ## 15. 页面使用的接口
 
 页面本身由服务端渲染，首页、提交、回复、上传、删除、账号中心等交互按需调用上述 API；账号中心的密码、偏好、身份绑定、创建班级使用同源表单 POST（`/user/*`），避免在浏览器中暴露密码到 JSON 请求。上传页在浏览器内使用 `FileReader` 将文件转换为 base64 后调用 `/api/upload`。
+
+征集类型管理页（Web `/home/<mob|pc>/admin/modes/`，小程序 `pages/modemanage/modemanage`）
+通过 `/api/all-modes` 读取列表、`/api/new-mode` 新增、`/api/del-mode` 删除；删除仍被征集的类型时，
+前端在二次确认后带 `force: true` 重试。

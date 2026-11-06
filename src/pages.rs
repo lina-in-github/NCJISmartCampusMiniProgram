@@ -373,6 +373,25 @@ async fn render_home_route(
                 &uploads_hint,
             ))
         }
+        ["modes"] => {
+            if !auth.is_admin() {
+                drop(db);
+                return msg_redirect(&format!("{base}submissions/"), "err", &t("flash_forbidden"));
+            }
+            let modes = db::list_class_modes(&db, &auth.class_id);
+            drop(db);
+            let ctx = page_context(
+                &st,
+                &headers,
+                &session,
+                &auth,
+                &prefs,
+                &t("page_modes"),
+                "modes",
+                flash,
+            );
+            html(view::mode_manage(&ctx, &modes))
+        }
         ["submissions"] => {
             let mine = auth.is_staff() && q.get("scope").map(String::as_str) == Some("mine");
             let show_hiddens = query_flag(

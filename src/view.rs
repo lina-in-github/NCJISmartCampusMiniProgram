@@ -529,6 +529,14 @@ fn nav_items(ctx: &LayoutCtx) -> Vec<NavItem> {
             icon: "plus",
         });
     }
+    if ctx.role == "admin" {
+        items.push(NavItem {
+            key: "modes",
+            label: "@[strings/nav_modes]",
+            href: format!("{base}modes/"),
+            icon: "list",
+        });
+    }
     items
 }
 
@@ -1270,6 +1278,15 @@ pub fn submissions(
     } else {
         String::new()
     };
+    let manage_btn = if admin {
+        format!(
+            r#"<a class="btn ghost" href="{base}modes/">{icon}@[strings/nav_modes]</a>"#,
+            base = base,
+            icon = icon("list")
+        )
+    } else {
+        String::new()
+    };
     let scope_tabs = if staff {
         format!(
             r#"<div class="segmented" role="tablist">
@@ -1374,7 +1391,7 @@ pub fn submissions(
     <h2 class="page-title">{title}</h2>
     <p class="page-sub">{page_sub}</p>
   </div>
-  <div class="page-actions">{scope_tabs}{toggle}{new_btn}</div>
+  <div class="page-actions">{scope_tabs}{toggle}{manage_btn}{new_btn}</div>
 </div>
 {category_tabs}
 {content}"#,
@@ -1386,6 +1403,7 @@ pub fn submissions(
         page_sub = page_sub,
         scope_tabs = scope_tabs,
         toggle = toggle,
+        manage_btn = manage_btn,
         new_btn = new_btn,
         category_tabs = category_tabs,
         content = content
@@ -1466,6 +1484,100 @@ pub fn new_submission(ctx: &LayoutCtx, modes: &[ClassModeRow]) -> String {
         special_group = special_group
     );
     layout(ctx, &body)
+}
+
+/// 征集类型管理页（管理员）：查看 / 新增 / 删除本班自定义模式。
+pub fn mode_manage(ctx: &LayoutCtx, modes: &[ClassModeRow]) -> String {
+    let base = ctx.base();
+    let count = modes.len();
+    let count_label = crate::strings::f1("modes_list_count", count);
+    let mode_list = if modes.is_empty() {
+        format!(
+            r#"<div class="empty compact"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/modes_empty_title]</div><div class="empty-desc">@[strings/modes_empty_desc]</div></div>"#,
+            icon = icon("list")
+        )
+    } else {
+        let rows: String = modes
+            .iter()
+            .map(|mode| {
+                let mut chips = String::new();
+                if mode.flags.abstract_mode {
+                    chips.push_str(&mode_chip("submission_flag_abstract", "warn"));
+                }
+                if mode.flags.invisible {
+                    chips.push_str(&mode_chip("submission_flag_invisible", "danger"));
+                }
+                if mode.flags.admin_only {
+                    chips.push_str(&mode_chip("submission_flag_admin_only", "danger"));
+                } else if mode.flags.teacher_only {
+                    chips.push_str(&mode_chip("submission_flag_teacher_only", "warn"));
+                }
+                if mode.flags.hidden {
+                    chips.push_str(&mode_chip("submission_flag_hidden", "warn"));
+                }
+                if mode.flags.separate_list && !mode.flags.abstract_mode {
+                    chips.push_str(&mode_chip("submission_flag_separate_list", "pinned"));
+                }
+                let extends = if mode.extend_modes.is_empty() {
+                    "—".to_string()
+                } else {
+                    mode.extend_modes.join(", ")
+                };
+                let created = if mode.created_name.trim().is_empty() {
+                    fmt_date(mode.created_at)
+                } else {
+                    format!("{} · {}", fmt_date(mode.created_at), mode.created_name)
+                };
+                let display = mode.effective_display_name();
+                format!(
+                    r#"<div class="list-row">
+  <div class="row-main">
+    <div class="row-title">{display}<span class="chip type">{base_type}</span>{chips}</div>
+    <div class="row-sub">
+      <code>{name}</code><span class="dot-sep"></span>
+      <span>@[strings/modes_extends_label]：{extends}</span><span class="dot-sep"></span>
+      <span>@[strings/modes_created_label]：{created}</span>
+    </div>
+  </div>
+  <div class="row-side">
+    <button class="btn ghost sm danger" type="button" data-del-mode="{id}" data-name="{display_attr}">{trash}@[strings/modes_delete]</button>
+  </div>
+</div>"#,
+                    display = esc(&display),
+                    base_type = esc(&type_label(&mode.base_type)),
+                    chips = chips,
+                    name = esc(&mode.name),
+                    extends = esc(&extends),
+                    created = esc(&created),
+                    id = esc(&mode.id),
+                    display_attr = esc(&display),
+                    trash = icon("trash")
+                )
+            })
+            .collect();
+        format!(r#"<div class="list">{rows}</div>"#)
+    };
+    let body = format!(
+        include_str!("./views/mode_manage.html"),
+        base = base,
+        arrow = icon("arrow-left"),
+        list_icon = icon("list"),
+        plus = icon("plus"),
+        inbox = icon("inbox"),
+        spark = icon("sparkles"),
+        count_label = esc(&count_label),
+        mode_list = mode_list,
+        class_name = esc(&ctx.class_name),
+        role = esc(&role_label(&ctx.role))
+    );
+    layout(ctx, &body)
+}
+
+fn mode_chip(key: &str, tone: &str) -> String {
+    format!(
+        r#"<span class="chip {tone}">{}</span>"#,
+        esc(&crate::strings::t(key))
+    )
 }
 
 pub fn uploads(
@@ -2463,6 +2575,16 @@ pub fn user_account(
         )
     };
 
+    let mode_manage_link = if admin_auths.iter().any(|a| a.id == ctx.auth_id) {
+        format!(
+            r#"<div class="form-actions"><a class="btn ghost" href="/home/{mode}/admin/modes/">{icon}@[strings/modes_page_title]</a><span class="hint">@[strings/modes_page_sub]</span></div>"#,
+            mode = esc(&ctx.mode),
+            icon = icon("list")
+        )
+    } else {
+        String::new()
+    };
+
     let admin_area = if admin_auths.is_empty() {
         format!(
             r#"<div class="account-note">{} @[strings/account_not_admin_note]</div>"#,
@@ -2483,6 +2605,7 @@ pub fn user_account(
             include_str!("./views/user_account_admin.html"),
             admin_select = admin_select,
             mode_admin_select = mode_admin_select,
+            mode_manage_link = mode_manage_link,
             class_opts = class_opts,
             plus = icon("plus"),
             key = icon("key")

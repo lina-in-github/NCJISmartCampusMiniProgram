@@ -1,0 +1,86 @@
+<div class="page-head">
+  <div>
+    <a class="back-link" href="{base}submissions/">{arrow}@[strings/type_generic]</a>
+    <h2 class="page-title">@[strings/modes_page_title]</h2>
+    <p class="page-sub">@[strings/modes_page_sub]</p>
+  </div>
+  <div class="page-actions">
+    <span class="chip type">{count_label}</span>
+    <a class="btn ghost" href="{base}submissions/">{inbox}@[strings/type_generic]</a>
+    <a class="btn primary" href="#mode-form">{plus}@[strings/account_mode_create]</a>
+  </div>
+</div>
+<div class="detail-grid">
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-head">
+        <h3 class="panel-title">{list_icon}@[strings/modes_list_title]</h3>
+        <span class="chip type">{count_label}</span>
+      </div>
+      <div class="panel-body">
+        {mode_list}
+        <p class="hint">@[strings/modes_builtin_hint]</p>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3 class="panel-title">{plus}@[strings/account_mode_create]</h3></div>
+      <div class="panel-body">
+        <form class="stack" id="mode-form">
+          <div class="form-grid">
+            <div class="field">
+              <label class="label" for="mode-name">@[strings/account_mode_name]</label>
+              <input class="input" id="mode-name" type="text" maxlength="60" required
+                     placeholder="@[strings/account_mode_name_placeholder]" autocomplete="off">
+            </div>
+            <div class="field">
+              <label class="label" for="mode-display-name">@[strings/account_mode_display_name]</label>
+              <input class="input" id="mode-display-name" type="text" maxlength="60"
+                     placeholder="@[strings/account_mode_display_name_placeholder]" autocomplete="off">
+            </div>
+            <div class="field full">
+              <label class="label" for="mode-extends">@[strings/account_mode_extends]</label>
+              <input class="input" id="mode-extends" type="text" maxlength="400"
+                     placeholder="@[strings/account_mode_extends_placeholder]" autocomplete="off">
+              <span class="hint">@[strings/account_mode_extends_hint]</span>
+            </div>
+            <div class="field full">
+              <span class="label">@[strings/account_mode_inherit_visibility]</span>
+              <div class="check-row" id="mode-visibility-extends">
+                <label class="check"><input type="checkbox" data-extend-mode="hidden"> @[strings/account_mode_flag_hidden]</label>
+                <label class="check"><input type="checkbox" data-extend-mode="teacher only"> @[strings/account_mode_flag_teacher_only]</label>
+                <label class="check"><input type="checkbox" data-extend-mode="admin only"> @[strings/account_mode_flag_admin_only]</label>
+                <label class="check"><input type="checkbox" data-extend-mode="invisible"> @[strings/account_mode_flag_invisible]</label>
+                <label class="check"><input type="checkbox" data-extend-mode="separate list"> @[strings/account_mode_flag_separate]</label>
+              </div>
+              <span class="hint">@[strings/account_mode_visibility_inherit_hint]</span>
+            </div>
+            <div class="field full">
+              <label class="check"><input type="checkbox" id="mode-abstract"> @[strings/account_mode_flag_abstract]</label>
+              <span class="hint">@[strings/account_mode_abstract_hint]</span>
+            </div>
+          </div>
+          <div class="member-result" id="mode-result" hidden></div>
+          <div><button class="btn outline" type="submit">{plus}@[strings/account_mode_create]</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <aside class="stack">
+    <div class="panel">
+      <div class="panel-head"><h3 class="panel-title">{spark}@[strings/new_tips_title]</h3></div>
+      <div class="panel-body">
+        <div class="stack text-sm">
+          <p>@[strings/modes_tip1]</p>
+          <p>@[strings/modes_tip2]</p>
+          <p>@[strings/modes_tip3]</p>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="kv"><dt>@[strings/new_current_class]</dt><dd>{class_name}</dd></div>
+        <div class="kv"><dt>@[strings/new_publish_identity]</dt><dd>{role}</dd></div>
+      </div>
+    </div>
+  </aside>
+</div>

@@ -84,6 +84,7 @@ name=nav_uploads_self lines=0 content=我的上传
 name=nav_uploads_staff lines=0 content=提交管理
 name=nav_account lines=0 content=账号
 name=nav_publish lines=0 content=发布征集
+name=nav_modes lines=0 content=征集类型
 name=page_home lines=0 content=首页
 name=page_submissions lines=0 content=征集
 name=page_publish lines=0 content=发布
@@ -92,6 +93,7 @@ name=page_upload lines=0 content=上传作品
 name=page_submission_detail lines=0 content=征集详情
 name=page_notice_detail lines=0 content=公示详情
 name=page_upload_detail lines=0 content=提交详情
+name=page_modes lines=0 content=征集类型
 name=login_hero_eyebrow lines=0 content=SMART CAMPUS
 name=login_hero_login_title lines=0 content=面向班级的简单管理工具
 name=login_hero_login_desc lines=0 content=面向班级的简单管理工具
@@ -199,6 +201,10 @@ name=new_subtitle lines=0 content=征集会立即出现在班级空间，学生�
 name=new_name_label lines=0 content=征集名称
 name=new_name_placeholder lines=0 content=例如：函数与导数 · 周末练习
 name=new_type_label lines=0 content=类型
+name=new_type_manual lines=0 content=手动输入
+name=new_type_manual_name lines=0 content=征集类型原始名称
+name=new_type_manual_placeholder lines=0 content=输入未预置的征集类型名称
+name=new_type_manual_hint lines=0 content=勾选后直接使用输入的原始名称，不再使用下拉选择；也可在账号中心把常用类型创建为可复用模式。
 name=new_deadline_label lines=0 content=截止时间
 name=new_no_deadline lines=0 content=不设置截止时间
 name=new_desc_label lines=0 content=说明
@@ -448,6 +454,7 @@ name=toast_survey_submitted lines=0 content=问卷已提交
 name=toast_survey_required lines=0 content=请填写必填项
 name=toast_answer_sheet_submitted lines=0 content=已提交并自动批改：{} / {} 分
 name=toast_submission_name_required lines=0 content=请填写征集名称
+name=toast_type_manual_required lines=0 content=请输入征集类型的原始名称
 name=toast_publishing lines=0 content=发布中…
 name=toast_submission_published lines=0 content=征集已发布
 name=toast_reply_empty lines=0 content=回复内容不能为空
@@ -517,6 +524,45 @@ name=account_mode_hint lines=0 content=选择要新增模式的班级管理员�
 name=account_mode_created lines=0 content=已新增模式「{}」，行为基类：{}
 name=account_mode_created_toast lines=0 content=已新增模式「{}」
 name=toast_mode_name_required lines=0 content=请填写模式名称
+name=modes_page_title lines=0 content=征集类型管理
+name=modes_page_sub lines=0 content=查看、新增或删除本班的自定义征集类型；内置类型不可删除。
+name=modes_list_title lines=0 content=自定义征集类型
+name=modes_list_count lines=0 content={} 个类型
+name=modes_empty_title lines=0 content=还没有自定义征集类型
+name=modes_empty_desc lines=0 content=使用下方表单新增；新增后可在发布征集时选择，也可以勾选「手动输入」。
+name=modes_builtin_hint lines=0 content=内置类型（作业、问卷、答题卡、隐藏、单独列出等）由系统提供，不能删除。
+name=modes_extends_label lines=0 content=继承
+name=modes_created_label lines=0 content=创建
+name=modes_delete lines=0 content=删除类型
+name=modes_delete_confirm_title lines=0 content=删除征集类型
+name=modes_delete_confirm_message lines=0 content=确定删除类型「{}」？只会删除类型本身，不会删除已发布的征集。
+name=modes_deleted lines=0 content=已删除类型「{}」
+name=modes_delete_inherited lines=0 content=该类型仍被其他类型继承，请先删除子类型
+name=modes_delete_failed lines=0 content=删除失败，请稍后重试
+name=modes_force_title lines=0 content=强制删除征集类型
+name=modes_force_message lines=0 content=类型「{}」仍有征集引用。强制删除后历史征集保留原类型与行为，但不再继承该类型的显示名称与可见性。确定继续？
+name=modes_force_delete lines=0 content=强制删除
+name=modes_force_deleted lines=0 content=已强制删除类型「{}」
+name=modes_tip1 lines=0 content=1. 只能删除本班自定义类型；内置类型不可删除。
+name=modes_tip2 lines=0 content=2. 类型被其他类型继承时，请先删除子类型。
+name=modes_tip3 lines=0 content=3. 类型仍被征集引用时默认拒绝删除；确认强制删除后，历史征集保留原类型与行为。
+name=mp_modes_hint lines=0 content=管理本班自定义征集类型；内置类型不可删除，被继承或仍被引用的类型需先处理。
+name=mp_modes_manage lines=0 content=管理征集类型
+name=mp_modes_manage_hint lines=0 content=查看、新增或删除本班已有类型；发布征集时可直接选择。
+name=mp_modes_extends_label lines=0 content=继承
+name=mp_modes_created_label lines=0 content=创建
+name=mp_modes_delete lines=0 content=删除类型
+name=mp_modes_delete_confirm_title lines=0 content=删除征集类型
+name=mp_modes_delete_confirm_message lines=0 content=确定删除类型「{}」？只会删除类型本身，不会删除已发布的征集。
+name=mp_modes_deleted lines=0 content=已删除类型「{}」
+name=mp_modes_delete_inherited lines=0 content=该类型仍被其他类型继承，请先删除子类型
+name=mp_modes_delete_failed lines=0 content=删除失败，请稍后重试
+name=mp_modes_force_title lines=0 content=强制删除征集类型
+name=mp_modes_force_message lines=0 content=类型「{}」仍有征集引用。强制删除后历史征集保留原类型与行为，但不再继承该类型的显示名称与可见性。确定继续？
+name=mp_modes_force_delete lines=0 content=强制删除
+name=mp_modes_force_deleted lines=0 content=已强制删除类型「{}」
+name=mp_modes_empty_hint lines=0 content=可在下方新增类型；新增后可在发布征集时选择。
+name=mp_modes_count lines=0 content={} 个类型
 name=mp_dialog_object lines=0 content=操作对象
 name=mp_dialog_id lines=0 content=编号
 name=mp_dialog_type lines=0 content=类型

@@ -6,6 +6,7 @@
     </view>
     <view class="topbar-actions">
       <view class="icon-btn" wx:if="{{ctx.staff}}" bindtap="onPublish">{{s.publish}}</view>
+      <view class="icon-btn" wx:if="{{ctx.role === 'admin'}}" bindtap="onManageModes">{{s.modes}}</view>
       <view class="icon-btn {{showHiddens ? 'accent-text' : ''}}" bindtap="onToggleHiddens">{{showHiddens ? s.hideHiddens : s.showHiddens}}</view>
       <view class="icon-btn" bindtap="onToggleTheme">◐</view>
     </view>

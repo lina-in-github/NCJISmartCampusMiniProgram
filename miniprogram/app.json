@@ -11,6 +11,7 @@
     "pages/uploads/uploads",
     "pages/upload-detail/upload-detail",
     "pages/account/account",
+    "pages/modemanage/modemanage",
     "pages/account-login/account-login"
   ],
   "window": {

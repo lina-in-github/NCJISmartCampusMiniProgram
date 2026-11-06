@@ -17,12 +17,27 @@
 
     <view class="field">
       <view class="label">{{s.typeLabel}}</view>
-      <picker mode="selector" range="{{typeLabels}}" value="{{typeIndex}}" bindchange="onType">
+      <picker mode="selector" range="{{typeLabels}}" value="{{typeIndex}}" bindchange="onType" disabled="{{manualType}}">
         <view class="picker">
           <view>{{typeLabels[typeIndex]}}</view>
           <view class="muted">▾</view>
         </view>
       </picker>
+      <view class="check-row" bindtap="onToggleManualType">
+        <view class="muted">{{s.manualType}}</view>
+        <view class="checkbox {{manualType ? 'on' : ''}}">{{manualType ? '✓' : ''}}</view>
+      </view>
+      <view wx:if="{{manualType}}">
+        <view class="label">{{s.manualTypeName}}<text class="req">*</text></view>
+        <input
+          class="input"
+          value="{{manualName}}"
+          placeholder="{{s.manualTypePlaceholder}}"
+          maxlength="60"
+          bindinput="onManualName"
+        />
+        <view class="hint">{{s.manualTypeHint}}</view>
+      </view>
     </view>
 
     <view class="field">

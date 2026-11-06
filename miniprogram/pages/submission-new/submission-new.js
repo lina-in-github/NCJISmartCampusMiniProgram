@@ -32,6 +32,8 @@ Page({
     typeBases: [],
     typeValue: "homework",
     typeBase: "homework",
+    manualType: false,
+    manualName: "",
     hasDeadline: true,
     date: "",
     time: "20:00",
@@ -80,6 +82,10 @@ Page({
         nameLabel: strings.t("new_name_label"),
         namePlaceholder: strings.t("new_name_placeholder"),
         typeLabel: strings.t("new_type_label"),
+        manualType: strings.t("new_type_manual"),
+        manualTypeName: strings.t("new_type_manual_name"),
+        manualTypePlaceholder: strings.t("new_type_manual_placeholder"),
+        manualTypeHint: strings.t("new_type_manual_hint"),
         deadlineLabel: strings.t("new_deadline_label"),
         noDeadline: strings.t("new_no_deadline"),
         descLabel: strings.t("new_desc_label"),
@@ -149,6 +155,43 @@ Page({
     });
   },
 
+  /** 手动输入的类型命中了已知模式时，沿用它的行为基类（问卷 / 答题卡提示）。 */
+  manualBase: function (raw) {
+    var key = String(raw === null || raw === undefined ? "" : raw)
+      .trim()
+      .toLowerCase()
+      .replace(/[_-]/g, " ")
+      .replace(/\s+/g, " ");
+    if (!key) return "other";
+    var values = this.data.typeValues;
+    var labels = this.data.typeLabels;
+    var bases = this.data.typeBases;
+    for (var i = 0; i < values.length; i++) {
+      if (
+        String(values[i]).toLowerCase() === key ||
+        String(labels[i]).toLowerCase() === key
+      ) {
+        return bases[i] || "other";
+      }
+    }
+    return "other";
+  },
+
+  onToggleManualType: function () {
+    var manualType = !this.data.manualType;
+    this.setData({
+      manualType: manualType,
+      typeBase: manualType
+        ? this.manualBase(this.data.manualName)
+        : this.data.typeBases[this.data.typeIndex] || "homework",
+    });
+  },
+
+  onManualName: function (e) {
+    var raw = String(e.detail.value || "");
+    this.setData({ manualName: raw, typeBase: this.manualBase(raw) });
+  },
+
   onDeadlineSwitch: function () {
     this.setData({ hasDeadline: !this.data.hasDeadline });
   },
@@ -170,6 +213,14 @@ Page({
       ui.toast(strings.t("toast_submission_name_required"), "error");
       return;
     }
+    var manual = this.data.manualType === true;
+    var kind = manual
+      ? String(this.data.manualName || "").trim()
+      : this.data.typeValue;
+    if (manual && !kind) {
+      ui.toast(strings.t("toast_type_manual_required"), "error");
+      return;
+    }
     var deadline = this.data.hasDeadline ? this.data.date + "T" + this.data.time : null;
     this.setData({ submitting: true });
     api
@@ -177,7 +228,7 @@ Page({
         auth: ctx.key,
         name: name,
         desc: String(this.data.desc || "").trim(),
-        type: this.data.typeValue,
+        type: kind,
         deadLine: deadline,
       })
       .then(function (res) {

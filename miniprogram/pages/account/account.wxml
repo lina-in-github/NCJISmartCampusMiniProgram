@@ -193,6 +193,10 @@
       <view class="btn-row">
         <view class="btn ghost block" bindtap="onAddMode">{{s.modeCreate}}</view>
       </view>
+      <view class="hint">{{s.manageModesHint}}</view>
+      <view class="btn-row">
+        <view class="btn outline block" bindtap="onManageModes">{{s.manageModes}}</view>
+      </view>
 
       <view class="card" wx:if="{{generated.length}}">
         <view class="flex-between">

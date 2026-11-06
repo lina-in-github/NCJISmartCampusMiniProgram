@@ -648,6 +648,21 @@ pub struct AllModesReq {
     pub auth: String,
 }
 
+/// `/api/del-mode`：管理员删除班级自定义征集模式。
+#[derive(Deserialize)]
+pub struct DelModeReq {
+    pub auth: String,
+    /// 模式 ID（`mode_*`）。与 `modeName` 至少填一个。
+    #[serde(default, rename = "id", alias = "modeID", alias = "mode_id")]
+    pub id: String,
+    /// 模式名称（也接受显示名称）。与 `id` 至少填一个。
+    #[serde(default, rename = "modeName", alias = "mode_name", alias = "name")]
+    pub mode_name: String,
+    /// 已有征集引用该模式时是否仍然删除（默认拒绝）。
+    #[serde(default, alias = "forceDelete", alias = "force_delete")]
+    pub force: bool,
+}
+
 /// `/api/my-uploads`：查询当前身份的提交；支持按征集 / 提交 ID 过滤。
 #[derive(Deserialize)]
 pub struct MyUploadsReq {
@@ -778,6 +793,9 @@ pub struct DelObjectReq {
     #[serde(default)]
     pub auth: Option<String>,
     pub id: String,
+    /// 删除征集模式时，是否在仍有征集引用的情况下强制删除（默认拒绝）。
+    #[serde(default, alias = "forceDelete", alias = "force_delete")]
+    pub force: bool,
 }
 
 // ---------------------------------------------------------------------------

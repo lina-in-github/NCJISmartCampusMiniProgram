@@ -37,6 +37,7 @@ Page({
       s: {
         title: strings.t("submissions_page_title"),
         publish: strings.t("nav_publish"),
+        modes: strings.t("nav_modes"),
         publishFirst: strings.t("submissions_publish_first"),
         emptyDesc: strings.t("submissions_empty_desc"),
         unit: unit,
@@ -120,6 +121,10 @@ Page({
 
   onPublish: function () {
     wx.navigateTo({ url: "/pages/submission-new/submission-new" });
+  },
+
+  onManageModes: function () {
+    wx.navigateTo({ url: "/pages/modemanage/modemanage" });
   },
 
   onScope: function (e) {

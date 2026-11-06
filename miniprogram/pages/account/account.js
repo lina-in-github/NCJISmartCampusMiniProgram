@@ -144,6 +144,8 @@ Page({
         modeHint: strings.t("mp_mode_hint"),
         modeAbstract: strings.t("mp_mode_abstract"),
         modeAbstractHint: strings.t("mp_mode_abstract_hint"),
+        manageModes: strings.t("mp_modes_manage"),
+        manageModesHint: strings.t("mp_modes_manage_hint"),
       },
     });
     this.refresh();
@@ -594,14 +596,17 @@ Page({
     this.setData({ "modeForm.abstract": !this.data.modeForm.abstract });
   },
 
+  onManageModes: function () {
+    wx.navigateTo({ url: "/pages/modemanage/modemanage" });
+  },
+
   onAddMode: function () {
     var self = this;
     var admin = this.data.adminBindings[this.data.adminIndex];
     if (!admin) {
       ui.toast(strings.t("toast_select_admin"), "error");
       return;
-    }
-    var name = String(this.data.modeForm.name || "").trim();
+    }    var name = String(this.data.modeForm.name || "").trim();
     if (!name) {
       ui.toast(strings.t("mp_mode_name_required"), "error");
       return;

@@ -18,11 +18,11 @@ use crate::tools::{
     role_session, session_cookie, valid_username, MatchMode, USID_COOKIE,
 };
 use crate::types::{
-    AllModesReq, AllSubmissionReq, AppState, AuthCtx, ByteInput, DelKeyReq, DelObjectReq,
-    DownloadReq, GetAuthsReq, LoginSession, LoginTryReq, MultiApiReq, MySubmissionsReq,
-    MyUploadsReq, NewClassReq, NewModeReq, NewSubmissionReq, NewUserReq, PendingUploadsReq,
-    RefreshKeyReq, RegisterReq, RenameAuthReq, ReplyReq, ResetPasswordReq, SubmissionRow,
-    UpgradePubkeyReq, UploadReq, UploadRow,
+    AllModesReq, AllSubmissionReq, AppState, AuthCtx, ByteInput, DelKeyReq, DelModeReq,
+    DelObjectReq, DownloadReq, GetAuthsReq, LoginSession, LoginTryReq, MultiApiReq,
+    MySubmissionsReq, MyUploadsReq, NewClassReq, NewModeReq, NewSubmissionReq, NewUserReq,
+    PendingUploadsReq, RefreshKeyReq, RegisterReq, RenameAuthReq, ReplyReq, ResetPasswordReq,
+    SubmissionRow, UpgradePubkeyReq, UploadReq, UploadRow,
 };
 
 const MAX_TITLE: usize = 200;
@@ -487,6 +487,40 @@ pub async fn new_mode(State(st): State<AppState>, Json(req): Json<NewModeReq>) -
     }
 }
 
+pub async fn del_mode(State(st): State<AppState>, Json(req): Json<DelModeReq>) -> Response {
+    let auth = match require_auth(&st, &req.auth) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    if !auth.is_admin() {
+        return api_forbidden("only admins can delete submission modes");
+    }
+    let id = req.id.trim();
+    let name = req.mode_name.trim();
+    let target = if !id.is_empty() { id } else { name };
+    if target.is_empty() {
+        return api_bad("id or modeName is required");
+    }
+    let db = st.db.lock().unwrap();
+    match db::delete_class_mode(&db, &auth.class_id, target, req.force) {
+        Ok(mode) => api_ok(json!({
+            "ok": true,
+            "success": true,
+            "msg": "submission mode deleted",
+            "id": mode.id,
+            "modeName": mode.name,
+            "displayName": mode.effective_display_name(),
+            "extends": mode.extend_modes,
+            "extendModes": mode.extend_modes,
+            "baseType": mode.base_type,
+            "flags": mode.flags.to_json(),
+            "deleted": mode.to_json(),
+        })),
+        Err(e) if e == "submission mode not found" => api_not_found(e),
+        Err(e) => api_bad(e),
+    }
+}
+
 pub async fn all_submission(
     State(st): State<AppState>,
     Json(req): Json<AllSubmissionReq>,
@@ -890,6 +924,33 @@ pub async fn del_object(
         }
         invalidate_auth_sessions(&st, &id);
         return api_ok(json!({ "ok": true, "msg": "auth deleted" }));
+    }
+
+    if id.starts_with("builtin_") {
+        return api_bad("builtin submission modes cannot be deleted");
+    }
+    if id.starts_with("mode_") {
+        let class = {
+            let db = st.db.lock().unwrap();
+            db::class_mode_class_id(&db, &id)
+        };
+        let Some(class) = class else {
+            return api_not_found("submission mode not found");
+        };
+        if class != auth.class_id {
+            return api_forbidden("you can only delete objects in the current class");
+        }
+        {
+            let db = st.db.lock().unwrap();
+            if let Err(e) = db::delete_class_mode(&db, &auth.class_id, &id, req.force) {
+                return if e == "submission mode not found" {
+                    api_not_found(e)
+                } else {
+                    api_bad(e)
+                };
+            }
+        }
+        return api_ok(json!({ "ok": true, "msg": "mode deleted" }));
     }
 
     let class = {
@@ -1547,6 +1608,7 @@ async fn dispatch_multi_api(
         "/api/pending-uploads" => call!(PendingUploadsReq, pending_uploads),
         "/api/new-mode" => call!(NewModeReq, new_mode),
         "/api/all-modes" | "/api/class-modes" => call!(AllModesReq, all_modes),
+        "/api/del-mode" => call!(DelModeReq, del_mode),
         "/api/reply" => call!(ReplyReq, reply),
         "/api/new-class" => call!(NewClassReq, new_class),
         "/api/new-user" => call!(NewUserReq, new_user),

@@ -211,6 +211,7 @@ async fn main() {
         .route("/api/new-mode", post(api::new_mode))
         .route("/api/all-modes", post(api::all_modes))
         .route("/api/class-modes", post(api::all_modes))
+        .route("/api/del-mode", post(api::del_mode))
         .route("/api/reply", post(api::reply))
         .route("/api/new-class", post(api::new_class))
         .route("/api/new-user", post(api::new_user))

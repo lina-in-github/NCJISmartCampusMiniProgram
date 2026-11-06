@@ -1845,6 +1845,77 @@ function newMode(db, body) {
   });
 }
 
+/** `/api/del-mode`：管理员删除班级自定义征集模式。 */
+function delMode(db, body) {
+  var ctx = requireAuth(db, body);
+  if (ctx.error) return ctx.error;
+  var auth = ctx.auth;
+  if (auth.role !== "admin") {
+    return fail(403, "only admins can delete submission modes");
+  }
+  var idRes = stringField(body, ["id", "modeID", "mode_id"], "");
+  if (!idRes.ok) return idRes.error;
+  var nameRes = stringField(body, ["modeName", "mode_name", "name"], "");
+  if (!nameRes.ok) return nameRes.error;
+  var target = idRes.value.trim() || nameRes.value.trim();
+  if (!target) return fail(400, "id or modeName is required");
+  if (target.indexOf("builtin_") === 0) {
+    return fail(400, "builtin submission modes cannot be deleted: " + target);
+  }
+  var force =
+    body.force === true || body.forceDelete === true || body.force_delete === true;
+  var normalized = normalizeModeName(target);
+  var row = null;
+  classModesOf(db, auth.class_id).forEach(function (m) {
+    if (m.id === target || m.normalized === normalized) row = m;
+  });
+  if (!row) return fail(404, "submission mode not found");
+  var children = classModesOf(db, auth.class_id).filter(function (m) {
+    if (m.id === row.id) return false;
+    return (m.extend_modes || []).some(function (parent) {
+      return normalizeModeName(parent) === row.normalized;
+    });
+  });
+  if (children.length) {
+    return fail(
+      400,
+      "submission mode is inherited by other modes: " +
+        children
+          .map(function (m) {
+            return m.name;
+          })
+          .join(", ")
+    );
+  }
+  var used = 0;
+  db.submissions.forEach(function (s) {
+    if (s.class_id === auth.class_id && normalizeModeName(s.type) === row.normalized) used++;
+  });
+  if (used > 0 && !force) {
+    return fail(
+      400,
+      "submission mode is still used by " +
+        used +
+        " submission(s); pass force=true to delete anyway"
+    );
+  }
+  var info = findMode(db, auth.class_id, row.normalized);
+  db.modes = (db.modes || []).filter(function (m) {
+    return m.id !== row.id;
+  });
+  return ok({
+    success: true,
+    msg: "submission mode deleted",
+    id: row.id,
+    modeName: row.name,
+    displayName: row.display_name || row.name,
+    extendModes: row.extend_modes || [],
+    baseType: row.base_type,
+    flags: info ? info.flags : flagsOfModeRow(row),
+    deleted: info ? modeInfoJson(info) : null,
+  });
+}
+
 function newSubmission(db, body) {
   var nameRes = requiredStringField(body, ["name"]);
   if (!nameRes.ok) return nameRes.error;
@@ -2213,6 +2284,19 @@ function delObject(db, body) {
     return ok({ msg: "auth deleted" });
   }
 
+  if (id.indexOf("builtin_") === 0) {
+    return fail(400, "builtin submission modes cannot be deleted");
+  }
+  if (id.indexOf("mode_") === 0) {
+    var res = delMode(db, {
+      auth: auth.key,
+      id: id,
+      force: body.force === true || body.forceDelete === true,
+    });
+    if (!res.ok) return res;
+    return ok({ msg: "mode deleted" });
+  }
+
   var isSub = id.indexOf("sub_") === 0;
   var isUpload = id.indexOf("up_") === 0;
   var isReply = id.indexOf("rep_") === 0;
@@ -2497,6 +2581,7 @@ var HANDLERS = {
   "new-mode": newMode,
   "all-modes": allModes,
   "class-modes": allModes,
+  "del-mode": delMode,
   reply: reply,
   "new-class": newClass,
   "new-user": newUser,

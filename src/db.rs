@@ -860,6 +860,145 @@ fn create_class_mode_impl(
 }
 
 // ---------------------------------------------------------------------------
+// 删除班级自定义征集模式
+// ---------------------------------------------------------------------------
+
+/// 班级自定义模式记录的所属班级（用于 `/api/del-object` 的跨班校验）。
+pub fn class_mode_class_id(db: &Connection, id: &str) -> Option<String> {
+    db.query_row(
+        "SELECT class_id FROM class_modes WHERE id = ?1",
+        params![id],
+        |r| r.get::<_, String>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+/// 按模式 ID 取得规范化名称（仅限当前班级）。
+fn class_mode_normalized_by_id(db: &Connection, class_id: &str, id: &str) -> Option<String> {
+    db.query_row(
+        "SELECT normalized FROM class_modes WHERE class_id = ?1 AND id = ?2",
+        params![class_id, id],
+        |r| r.get::<_, String>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+/// 按模式名称 / 显示名称取得规范化名称（仅限当前班级）。
+fn class_mode_normalized_by_name(db: &Connection, class_id: &str, raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let normalized = normalize_mode_name(raw);
+    if !normalized.is_empty() && load_class_mode_row(db, class_id, &normalized).is_some() {
+        return Some(normalized);
+    }
+    db.query_row(
+        "SELECT normalized FROM class_modes
+         WHERE class_id = ?1 AND (display_name = ?2 COLLATE NOCASE OR name = ?2 COLLATE NOCASE)
+         LIMIT 1",
+        params![class_id, raw],
+        |r| r.get::<_, String>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+/// 统计使用某个模式的征集数量（按规范化名称比较，兼容旧的任意类型字符串）。
+fn count_submissions_using_mode(
+    db: &Connection,
+    class_id: &str,
+    normalized: &str,
+) -> Result<i64, String> {
+    let mut stmt = db
+        .prepare("SELECT type FROM submissions WHERE class_id = ?1")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![class_id], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    let mut count = 0i64;
+    for row in rows {
+        let kind = row.map_err(|e| e.to_string())?;
+        if normalize_mode_name(&kind) == normalized {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// 删除一个班级自定义征集模式。
+///
+/// 约束：
+/// - 内置模式不能删除；
+/// - 仍被其他自定义模式继承时不能删除（避免继承链断裂）；
+/// - 仍有征集引用时默认拒绝，`force=true` 可强制删除；征集自身的 `type` / `base_type`
+///   会保留，因此历史征集的表单类型与展示不受影响，只是不再有模式的显示名称 / 可见性继承。
+pub fn delete_class_mode(
+    db: &Connection,
+    class_id: &str,
+    raw: &str,
+    force: bool,
+) -> Result<ModeInfo, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err("mode id or name must not be empty".to_string());
+    }
+    if raw.starts_with("builtin_") {
+        return Err(format!("builtin submission modes cannot be deleted: {raw}"));
+    }
+    let row = if raw.starts_with("mode_") {
+        class_mode_normalized_by_id(db, class_id, raw)
+            .and_then(|normalized| load_class_mode_row(db, class_id, &normalized))
+    } else {
+        let normalized = normalize_mode_name(raw);
+        if builtin_mode(&normalized).is_some() {
+            return Err(format!("builtin submission modes cannot be deleted: {raw}"));
+        }
+        class_mode_normalized_by_name(db, class_id, raw)
+            .and_then(|normalized| load_class_mode_row(db, class_id, &normalized))
+    };
+    let Some(row) = row else {
+        return Err("submission mode not found".to_string());
+    };
+    let children: Vec<String> = list_class_modes(db, class_id)
+        .into_iter()
+        .filter(|mode| {
+            mode.id != row.id
+                && mode
+                    .extend_modes
+                    .iter()
+                    .any(|parent| normalize_mode_name(parent) == row.normalized)
+        })
+        .map(|mode| mode.name)
+        .collect();
+    if !children.is_empty() {
+        return Err(format!(
+            "submission mode is inherited by other modes: {}",
+            children.join(", ")
+        ));
+    }
+    let used = count_submissions_using_mode(db, class_id, &row.normalized)?;
+    if used > 0 && !force {
+        return Err(format!(
+            "submission mode is still used by {used} submission(s); pass force=true to delete anyway"
+        ));
+    }
+    let info = find_mode(db, class_id, &row.normalized)
+        .ok_or_else(|| "submission mode not found".to_string())?;
+    db.execute(
+        "DELETE FROM class_modes WHERE class_id = ?1 AND id = ?2",
+        params![class_id, row.id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(info)
+}
+
+// ---------------------------------------------------------------------------
 // 写入
 // ---------------------------------------------------------------------------
 
@@ -3080,6 +3219,87 @@ mod tests {
             assert_eq!(row.kind, mode.name);
             assert!(row.is_answer_sheet());
             assert!(row.is_form());
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn class_modes_can_be_deleted() {
+        let path = temp_db();
+        {
+            let conn = open(&path).unwrap();
+            let admin = load_auth_by_key(&conn, DEMO_ADMIN_KEY).unwrap();
+            let teacher = load_auth_by_key(&conn, DEMO_TEACHER_KEY).unwrap();
+            let class_id = admin.class_id.clone();
+
+            let mode = create_class_mode_with_options(
+                &conn,
+                &admin,
+                "deletable",
+                &["homework".to_string()],
+                &ModeCreateOptions {
+                    display_name: "可删除".to_string(),
+                    ..ModeCreateOptions::default()
+                },
+            )
+            .expect("create mode");
+            let deleted =
+                delete_class_mode(&conn, &class_id, &mode.id, false).expect("delete by id");
+            assert_eq!(deleted.name, "deletable");
+            assert!(find_mode(&conn, &class_id, "deletable").is_none());
+            assert!(find_mode(&conn, &class_id, "可删除").is_none());
+
+            let by_name = create_class_mode(&conn, &admin, "delete by name", &[]).expect("mode");
+            assert!(delete_class_mode(&conn, &class_id, "delete by name", false).is_ok());
+            assert!(find_mode(&conn, &class_id, &by_name.name).is_none());
+
+            let by_display = create_class_mode_with_options(
+                &conn,
+                &admin,
+                "delete by display",
+                &[],
+                &ModeCreateOptions {
+                    display_name: "按显示名删除".to_string(),
+                    ..ModeCreateOptions::default()
+                },
+            )
+            .expect("mode");
+            assert!(delete_class_mode(&conn, &class_id, "按显示名删除", false).is_ok());
+            assert!(find_mode(&conn, &class_id, &by_display.name).is_none());
+
+            // 内置模式与不存在的模式不能删除。
+            assert!(delete_class_mode(&conn, &class_id, "builtin_homework", false).is_err());
+            assert!(delete_class_mode(&conn, &class_id, "homework", false).is_err());
+            assert!(delete_class_mode(&conn, &class_id, "missing mode", false).is_err());
+
+            // 仍被继承时不能删除；删除子模式后可以删除父模式。
+            let parent = create_class_mode(&conn, &admin, "parent mode", &[]).expect("parent");
+            let child = create_class_mode(&conn, &admin, "child mode", &[parent.name.clone()])
+                .expect("child");
+            let inherited = delete_class_mode(&conn, &class_id, &parent.id, false).unwrap_err();
+            assert!(inherited.contains("inherited"));
+            delete_class_mode(&conn, &class_id, &child.id, false).expect("delete child");
+            delete_class_mode(&conn, &class_id, &parent.id, false).expect("delete parent");
+
+            // 仍被征集引用时默认拒绝，force 才能删除；提交的 kind / base_type 保留。
+            let used = create_class_mode(&conn, &admin, "used mode", &[]).expect("used mode");
+            let sub = insert_submission_mode(
+                &conn,
+                &teacher,
+                "引用待删模式的征集",
+                "",
+                &used.name,
+                &used.base_type,
+                None,
+            )
+            .expect("submission");
+            let in_use = delete_class_mode(&conn, &class_id, &used.id, false).unwrap_err();
+            assert!(in_use.contains("still used"));
+            delete_class_mode(&conn, &class_id, &used.id, true).expect("force delete");
+            assert!(find_mode(&conn, &class_id, "used mode").is_none());
+            let row = load_submission(&conn, &teacher, &sub).expect("submission");
+            assert_eq!(row.kind, "used mode");
+            assert_eq!(row.effective_kind(), "other");
         }
         let _ = std::fs::remove_file(&path);
     }

@@ -93,7 +93,11 @@
       else if (res.status === 403) msg = S("flash_forbidden");
       else if (res.status >= 500) msg = S("flash_server_error");
       else msg = S("flash_request_failed");
-      throw new Error(msg);
+      var error = new Error(msg);
+      // 保留服务端原始信息与状态码，供需要区分业务错误的交互使用（例如强制删除）。
+      error.status = res.status;
+      error.apiMsg = data.msg || data.message || "";
+      throw error;
     }
     return data;
   }
@@ -176,6 +180,48 @@
       d.addEventListener("close", onClose);
       d.returnValue = "cancel";
       d.showModal();
+    });
+  }
+
+  // 删除班级自定义征集类型：仍被引用时二次询问是否强制删除。
+  function deleteSubmissionMode(btn, id, name) {
+    function run(force) {
+      setLoading(btn, true);
+      api("/api/del-mode", { auth: SC.auth, id: id, force: !!force })
+        .then(function () {
+          toast(S(force ? "modes_force_deleted" : "modes_deleted", name), "ok");
+          setTimeout(function () {
+            location.reload();
+          }, 400);
+        })
+        .catch(function (err) {
+          setLoading(btn, false);
+          var apiMsg = String(err.apiMsg || "");
+          if (/inherited/i.test(apiMsg)) {
+            toast(S("modes_delete_inherited"), "error");
+            return;
+          }
+          if (!force && /still used/i.test(apiMsg)) {
+            confirmAction({
+              title: S("modes_force_title"),
+              message: S("modes_force_message", name),
+              confirmText: S("modes_force_delete"),
+              danger: true
+            }).then(function (ok) {
+              if (ok) run(true);
+            });
+            return;
+          }
+          toast(S("modes_delete_failed"), "error");
+        });
+    }
+    confirmAction({
+      title: S("modes_delete_confirm_title"),
+      message: S("modes_delete_confirm_message", name),
+      confirmText: S("common_delete"),
+      danger: true
+    }).then(function (ok) {
+      if (ok) run(false);
     });
   }
 
@@ -267,6 +313,18 @@
           lightboxTrigger.getAttribute("data-name") || S("common_attachment_preview");
         dlg.showModal();
       }
+      return;
+    }
+
+    var modeDelBtn = e.target.closest("[data-del-mode]");
+    if (modeDelBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      deleteSubmissionMode(
+        modeDelBtn,
+        modeDelBtn.getAttribute("data-del-mode"),
+        modeDelBtn.getAttribute("data-name") || S("modes_list_title")
+      );
       return;
     }
 
@@ -436,6 +494,10 @@
   if (submissionForm) {
     var noDeadline = $("#no-deadline");
     var deadlineInput = $("#sub-deadline");
+    var typeSelect = $("#sub-type");
+    var manualType = $("#sub-type-manual");
+    var manualTypeField = $("#sub-type-manual-field");
+    var manualTypeInput = $("#sub-type-manual-name");
     function syncDeadline() {
       if (!deadlineInput || !noDeadline) return;
       deadlineInput.disabled = noDeadline.checked;
@@ -444,13 +506,36 @@
       noDeadline.addEventListener("change", syncDeadline);
       syncDeadline();
     }
+    // 勾选「手动输入」后，直接用输入的征集类型原始名称，忽略下拉选择。
+    function syncManualType() {
+      if (!manualType) return;
+      var on = manualType.checked;
+      if (manualTypeField) manualTypeField.hidden = !on;
+      if (manualTypeInput) {
+        manualTypeInput.required = on;
+        if (on) manualTypeInput.focus();
+      }
+      if (typeSelect) typeSelect.disabled = on;
+    }
+    if (manualType) {
+      manualType.addEventListener("change", syncManualType);
+      syncManualType();
+    }
 
     submissionForm.addEventListener("submit", async function (e) {
       e.preventDefault();
       var btn = $("#submission-submit");
       var name = $("#sub-name").value.trim();
       var desc = $("#sub-desc").value.trim();
-      var kind = $("#sub-type").value;
+      var manual = manualType && manualType.checked;
+      var kind = manual
+        ? (manualTypeInput ? manualTypeInput.value.trim() : "")
+        : typeSelect.value;
+      if (manual && !kind) {
+        toast(S("toast_type_manual_required"), "error");
+        if (manualTypeInput) manualTypeInput.focus();
+        return;
+      }
       var deadline = noDeadline && noDeadline.checked ? null : deadlineInput.value;
       if (!name) {
         toast(S("toast_submission_name_required"), "error");
@@ -990,11 +1075,13 @@
       var btn = modeForm.querySelector("button[type=submit]");
       var adminSelect = $("#mode-admin");
       var option = adminSelect && adminSelect.options[adminSelect.selectedIndex];
+      // 账号中心按选中的管理员身份操作；班级管理页直接使用当前班级管理员密钥。
+      var authKey = option ? option.value : SC.auth;
       var name = ($("#mode-name").value || "").trim();
       var displayName = ($("#mode-display-name").value || "").trim();
       var extendRaw = ($("#mode-extends").value || "").trim();
       var result = $("#mode-result");
-      if (!option) {
+      if (!authKey) {
         toast(S("toast_select_admin"), "error");
         return;
       }
@@ -1018,7 +1105,7 @@
       setLoading(btn, true, S("toast_saving"));
       try {
         var data = await api("/api/new-mode", {
-          auth: option.value,
+          auth: authKey,
           modeName: name,
           displayName: displayName || name,
           extendModes: extendModes,
@@ -1041,6 +1128,12 @@
         });
         var abstractInput = $("#mode-abstract");
         if (abstractInput) abstractInput.checked = false;
+        // 班级管理页是服务端渲染的类型列表：新增后刷新以显示新类型。
+        if (!SC.isAccount) {
+          setTimeout(function () {
+            location.reload();
+          }, 450);
+        }
       } catch (err) {
         toast(err.message, "error");
       } finally {

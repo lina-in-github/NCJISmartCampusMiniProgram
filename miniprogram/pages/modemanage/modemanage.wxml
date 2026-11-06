@@ -1,0 +1,112 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{s.title}}</view>
+      <view class="topbar-sub">{{ctx.classText || s.subtitle}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onBack">{{s.account}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="flex-between">
+      <view class="section-title">{{s.listTitle}}</view>
+      <view class="chip">{{s.countText}}</view>
+    </view>
+    <view class="hint">{{s.listHint}}</view>
+
+    <view class="empty" wx:if="{{!loading && !modes.length}}">
+      <view class="empty-title">{{s.none}}</view>
+      <view class="empty-desc">{{s.emptyHint}}</view>
+    </view>
+
+    <view class="row" wx:for="{{modes}}" wx:key="id">
+      <view class="row-head">
+        <view class="row-title">{{item.displayName}}</view>
+        <view class="chip">{{item.baseLabel}}</view>
+      </view>
+      <view class="row-sub mono">{{item.name}}</view>
+      <view class="row-sub">{{s.extendsLabel}}：{{item.extendsText}}</view>
+      <view class="row-sub" wx:if="{{item.createdText}}">{{s.createdLabel}}：{{item.createdText}}</view>
+      <view class="chip-row" wx:if="{{item.badges.length}}">
+        <view
+          class="chip {{badge.tone}}"
+          wx:for="{{item.badges}}"
+          wx:for-item="badge"
+          wx:key="label"
+        >{{badge.label}}</view>
+      </view>
+      <view class="btn-row">
+        <view
+          class="btn small danger"
+          data-id="{{item.id}}"
+          data-name="{{item.displayName}}"
+          bindtap="onDeleteMode"
+        >{{s.delete}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">{{s.formTitle}}</view>
+    <view class="hint">{{s.formHint}}</view>
+    <view class="field mt-sm">
+      <view class="label">{{s.nameLabel}}</view>
+      <input
+        class="input"
+        value="{{modeForm.name}}"
+        placeholder="{{s.nameLabel}}"
+        maxlength="60"
+        bindinput="onModeName"
+      />
+    </view>
+    <view class="field">
+      <view class="label">{{s.displayNameLabel}}</view>
+      <input
+        class="input"
+        value="{{modeForm.displayName}}"
+        placeholder="{{s.displayNameLabel}}"
+        maxlength="60"
+        bindinput="onModeDisplayName"
+      />
+    </view>
+    <view class="field">
+      <view class="label">{{s.extendsFieldLabel}}</view>
+      <input
+        class="input"
+        value="{{modeForm.extends}}"
+        placeholder="{{s.extendsPlaceholder}}"
+        maxlength="400"
+        bindinput="onModeExtends"
+      />
+    </view>
+    <view class="field">
+      <view class="label">{{s.abstract}}</view>
+      <view class="check-line" bindtap="onModeAbstract">
+        <view class="checkbox {{modeForm.abstract ? 'on' : ''}}">{{modeForm.abstract ? '✓' : ''}}</view>
+      </view>
+      <view class="hint">{{s.abstractHint}}</view>
+    </view>
+    <view class="btn-row">
+      <view class="btn ghost block" bindtap="onAddMode">{{s.create}}</view>
+    </view>
+  </view>
+
+  <confirm-dialog
+    open="{{dialog.open}}"
+    title="{{dialog.title}}"
+    message="{{dialog.message}}"
+    object-label="{{dialog.objectLabel}}"
+    object-info="{{dialog.objectInfo}}"
+    need-password="{{dialog.needPassword}}"
+    password-label="{{dialog.passwordLabel}}"
+    password-placeholder="{{dialog.passwordPlaceholder}}"
+    confirm-text="{{dialog.confirmText}}"
+    cancel-text="{{dialog.cancelText}}"
+    loading="{{dialog.loading}}"
+    danger="{{dialog.danger}}"
+    bind:confirm="onDialogConfirm"
+    bind:cancel="onDialogCancel"
+  />
+</view>

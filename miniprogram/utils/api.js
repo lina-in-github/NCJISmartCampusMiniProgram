@@ -12,6 +12,7 @@
  *   /api/pending-uploads -> {ok, datas:[与 my-uploads 相同 + mine]}
  *   /api/new-mode        -> {ok, id, modeName, extendModes, baseType}
  *   /api/all-modes       -> {ok, modes, datas}
+ *   /api/del-mode        -> {ok, id, modeName, displayName, msg}
  *   /api/reply           -> {ok, id}
  *   /api/new-class       -> {ok, id, code, auth, authID}
  *   /api/new-user        -> {ok, IDs, keys, members}
@@ -70,6 +71,11 @@ function newMode(payload) {
 /** 班级可用的征集模式（内置 + 自定义）。 */
 function allModes(payload) {
   return request.post("all-modes", payload);
+}
+
+/** 管理员：删除班级自定义征集模式（传 id 或 modeName；force 可强制删除仍被引用的模式）。 */
+function delMode(payload) {
+  return request.post("del-mode", payload);
 }
 
 function reply(payload) {
@@ -175,6 +181,7 @@ module.exports = {
   pendingUploads: pendingUploads,
   newMode: newMode,
   allModes: allModes,
+  delMode: delMode,
   reply: reply,
   newClass: newClass,
   newUser: newUser,
