@@ -162,7 +162,7 @@ name=home_float_admin_sub lines=0 content=全部内容尽在掌握
 name=home_float_default_sub lines=0 content=点击即可查看回复
 name=home_recent_submissions lines=0 content=最近的征集
 name=home_recent_admin lines=0 content=最近的提交
-name=home_recent_teacher lines=0 content=最近的提交
+name=home_recent_teacher lines=0 content=我发布的待回复提交
 name=home_recent_student lines=0 content=最近的提交
 name=home_recent_self lines=0 content=最近的提交
 name=home_recent_parent lines=0 content=最近的提交
@@ -170,7 +170,7 @@ name=home_empty_submissions_title lines=0 content=还没有征集
 name=home_empty_submissions_desc lines=0 content=当前班级还没有发布任何征集，稍后再来看看吧！
 name=home_empty_uploads_title lines=0 content=暂时没有需要关注的提交
 name=home_self_hint lines=0 content=还没有需要关注的提交
-name=home_pending_hint lines=0 content=优先处理未回复的提交
+name=home_pending_hint lines=0 content=优先显示你发布的征集中的待回复提交
 name=home_admin_hint lines=0 content=全部内容尽在掌握
 name=home_parent_hint lines=0 content=孩子的最近提交
 name=stat_members lines=0 content=班级成员
@@ -497,3 +497,73 @@ name=flash_pubkey_missing lines=0 content=该账号尚未完成公钥迁移，�
 name=flash_pubkey_invalid lines=0 content=公钥格式无效，请重新输入。
 name=flash_login_challenge_error lines=0 content=登录挑战验证失败，请重试。
 name=flash_crypto_unsupported lines=0 content=当前环境不支持 Web Crypto，无法进行安全登录。请使用 HTTPS 或升级浏览器。
+name=page_submissions_mine lines=0 content=我的征集
+name=submissions_scope_mine lines=0 content=我发布的
+name=submissions_empty_mine_title lines=0 content=还没有发布过征集
+name=submissions_empty_mine_desc lines=0 content=你发布后的征集会显示在这里。
+name=submissions_page_title_mine lines=0 content=我发布的征集
+name=submission_mine lines=0 content=我发布的
+name=uploads_tab_mine lines=0 content=我的提交 {}
+name=uploads_empty_mine lines=0 content=还没有个人提交
+name=new_mode_group lines=0 content=班级自定义模式
+name=new_mode_hint lines=0 content=本班已定义 {} 个自定义征集模式，可在类型中选择。
+name=account_mode_name lines=0 content=模式名称
+name=account_mode_name_placeholder lines=0 content=例如：数学选择题作业
+name=account_mode_extends lines=0 content=继承模式（逗号分隔）
+name=account_mode_extends_placeholder lines=0 content=homework, answer sheet
+name=account_mode_extends_hint lines=0 content=继承内置模式或本班已有模式的行为；例如继承 answer sheet 会自动启用答题卡校验与批改。
+name=account_mode_create lines=0 content=新增征集模式
+name=account_mode_hint lines=0 content=选择要新增模式的班级管理员身份
+name=account_mode_created lines=0 content=已新增模式「{}」，行为基类：{}
+name=account_mode_created_toast lines=0 content=已新增模式「{}」
+name=toast_mode_name_required lines=0 content=请填写模式名称
+name=mp_dialog_object lines=0 content=操作对象
+name=mp_dialog_id lines=0 content=编号
+name=mp_dialog_type lines=0 content=类型
+name=mp_dialog_creator lines=0 content=发布者
+name=mp_dialog_submission lines=0 content=所属征集
+name=mp_dialog_uploader lines=0 content=提交人
+name=mp_dialog_identity lines=0 content=身份
+name=mp_dialog_key lines=0 content=密钥
+name=mp_dialog_password lines=0 content=账号密码
+name=mp_dialog_password_placeholder lines=0 content=请输入当前账号密码
+name=mp_dialog_loading lines=0 content=处理中…
+name=mp_dialog_delete_title lines=0 content=删除确认
+name=mp_dialog_delete_reply_title lines=0 content=删除回复
+name=mp_dialog_unbind_title lines=0 content=解除身份绑定
+name=mp_dialog_delete_key_title lines=0 content=删除班级密钥
+name=mp_dialog_reset_key_title lines=0 content=重置身份密钥
+name=mp_dialog_reset_key_message lines=0 content=重置后旧密钥立即失效，身份下的征集、提交与回复会迁移到新密钥。请输入当前账号密码确认操作。
+name=mp_dialog_unbind_message lines=0 content=仅从本机账号移除这个身份绑定，服务器上的密钥不会被删除。
+name=mp_dialog_delete_key_message lines=0 content=会立即删除服务器上的密钥，该身份将无法再登录，相关数据保留。
+name=mp_dialog_delete_reply_message lines=0 content=确定删除这条回复吗？此操作不可撤销。
+name=mp_dialog_confirm_delete lines=0 content=确认删除
+name=mp_dialog_confirm_unbind lines=0 content=确认解除
+name=mp_dialog_confirm_reset lines=0 content=确认重置
+name=mp_dialog_confirm_delete_key lines=0 content=确认删除密钥
+name=mp_dialog_notice lines=0 content=该操作不可撤销
+name=mp_my_submissions lines=0 content=我发布的
+name=mp_submissions_scope_all lines=0 content=全部
+name=mp_uploads_tab_mine lines=0 content=我的提交
+name=mp_uploads_empty_mine lines=0 content=还没有个人提交
+name=mp_new_mode_group lines=0 content=班级自定义模式
+name=mp_mode_created lines=0 content=已新增模式「{}」
+name=mp_mode_name_required lines=0 content=请填写模式名称
+name=mp_extend_placeholder lines=0 content=homework, answer sheet
+name=mp_mode_form_title lines=0 content=新增征集模式
+name=mp_mode_name_label lines=0 content=模式名称
+name=mp_mode_extends_label lines=0 content=继承模式（逗号分隔）
+name=mp_mode_create lines=0 content=新增征集模式
+name=mp_mode_hint lines=0 content=管理员可为所选班级新增自定义征集模式。
+name=mp_modes_title lines=0 content=班级征集模式
+name=mp_modes_none lines=0 content=暂无自定义模式
+name=mp_pending_title lines=0 content=我发布的待回复提交
+name=mp_my_submissions_title lines=0 content=我发布的征集
+name=mp_my_submissions_empty lines=0 content=还没有发布过征集
+name=mp_tab_all lines=0 content=全部
+name=mp_tab_mine lines=0 content=我发布的
+name=mp_delete_reply lines=0 content=删除回复
+name=mp_reply_id lines=0 content=回复编号
+name=mp_dialog_tip lines=0 content=提示
+name=mp_submissions_scope_mine lines=0 content=我发布的
+name=mp_dialog_mine_badge lines=0 content=我发布的

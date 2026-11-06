@@ -6,7 +6,8 @@
 - 数据库：SQLite，首次启动自动建表并写入演示数据
 - 需求来源：[`doc/requirements.md`](doc/requirements.md)
 - 完整 API 文档：[`doc/api.md`](doc/api.md)
-- 当前版本：**v0.1.7** — 用户登录改为**非对称挑战**：密码只在本机通过 PBKDF2 派生 X25519 私钥，服务端仅保存公钥；新增 `/api/login-try`、`/api/get-auths`、`/api/refresh-key`、`/api/reset-password`、`/api/register`、`/api/upgrade-pubkey`
+- 当前版本：**v0.1.7**（本次迭代新增个人查询、班级自定义征集模式与小程序敏感操作弹窗）— 用户登录为非对称挑战：密码只在本机通过 PBKDF2 派生 X25519 私钥，服务端仅保存公钥；`/api/login-try`、`/api/get-auths`、`/api/refresh-key`、`/api/reset-password`、`/api/register`、`/api/upgrade-pubkey`
+- 本次新增：`/api/my-uploads`、`/api/my-submissions`、`/api/pending-uploads`、`/api/new-mode`、`/api/all-modes`；老师首页 / 提交列表优先展示自己发布的征集中的待回复提交；小程序敏感操作统一为居中、不可划走的确认弹窗（显示对象信息，重置密钥时要求输入密码）
 - 历史版本：v0.1.6 学生 / 家长视角改为前台展示区分；v0.1.5 新增征集模式「答题卡」（问卷派生：`id` / `data-answer` / `data-score`、全部必填、前端自动批改）；v0.1.4 新增征集模式「问卷」（简介中的 `<input/>` / `<checkbox/>` / `<switch/>` 渲染为表单、bot 提交 JSON 答案）；v0.1.2 UI 文案集中到 `strings/zh-CN.txt`、API 文案改为英文、角色身份与账号会话隔离；v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
 
 ---
@@ -150,6 +151,11 @@ SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
 | `/api/download` | 老师 / 管理员 | 按条件下载/查看某征集的提交与回复 |
 | `/api/new-submission` | 老师 / 管理员 | 发布征集 |
 | `/api/all-submission` | 任意身份 | 学生：本人视角；老师/管理员：全班视角 |
+| `/api/my-uploads` | 任意身份 | 查询当前身份的全部提交（可按征集 / 提交 ID 过滤） |
+| `/api/my-submissions` | 任意身份 | 查询当前身份发布的所有征集 |
+| `/api/pending-uploads` | 老师 / 管理员 | 待回复提交，自己发布的征集优先（`ownOnly` 可只看自己的） |
+| `/api/new-mode` | 管理员 | 为班级新增自定义征集模式（继承内置 / 已有模式的行为） |
+| `/api/all-modes` | 任意身份 | 列出班级可用的征集模式（内置 + 自定义） |
 | `/api/reply` | 老师 / 管理员 | 回复一条提交 |
 | `/api/new-class` | 管理员 | 创建班级（自动生成一个绑定到当前用户的管理员密钥） |
 | `/api/new-user` | 管理员 | 在本班批量生成成员密钥 |
@@ -234,7 +240,7 @@ users  1 ─── n  auths  n ─── 1  classes
 - 会话保存在内存中：**重启服务后需要重新登录**，但业务数据全部持久化在 SQLite。
 - 首次使用：管理员通过 `/api/new-user` 生成密钥 → 成员在 `/login/account` 注册账号（公钥由浏览器派生）
   并绑定密钥（或登录后添加密钥）。
-- 学生身份的页面角色是 `student` / `parent` 两种展示视角（见 4.11），都存在 `sc_sid` 里；老师 / 管理员固定为自己的角色。
+- 学生身份的页面角色是 `student` / `parent` 两种展示视角（见 4.14），都存在 `sc_sid` 里；老师 / 管理员固定为自己的角色。
 
 ### 4.4 附件格式
 
@@ -364,7 +370,35 @@ API 不使用该字符串库：API 的错误与成功消息统一为英文。
   不合法返回 `400`；提交时服务端要求所有题目作答；
 - 已知限制：前端批改意味着正确答案随页面下发（`data-answer`），适合练习/自测，正式考试应改为服务端批改。
 
-### 4.11 学生 / 家长视角（v0.1.6，仅前台）
+### 4.11 个人查询与待回复优先（本次新增）
+
+- `/api/my-uploads` 只返回当前 `auth` 的提交，学生与教职工都可用；支持 `submissionID` /
+  `uploadID` / `match_mode` 过滤，返回 `replyIDs` 方便逐条删除回复。
+- `/api/my-submissions` 只返回 `created_by = 当前 auth` 的征集，字段与 `/api/all-submission` 一致。
+- `/api/pending-uploads` 返回尚未回复的提交，并按「自己发布的征集优先、其余按时间倒序」排序；
+  Web 首页、提交列表与小程序首页都使用这个顺序。Web 老师首页的标题也改为「我发布的待回复提交」。
+- `/api/download` 增加 `submissionID` / `replyIDs`；`/api/all-submission` 增加 `baseType` /
+  `createdByID`，前端据此标记「我发布的」并正确识别自定义模式。
+
+### 4.12 班级自定义征集模式（本次新增）
+
+- 管理员调用 `/api/new-mode`，为班级新增 `modeName` + `extendModes`；
+  例如 `maths multiple-choise homework` 继承 `homework` 与 `answer sheet`，实际行为是答题卡。
+- 模式存储在 `class_modes` 表；创建时解析并固化 `base_type`，发布征集时把自定义模式名写入
+  `submissions.type`，把实际行为写入 `submissions.base_type`。因此题目校验、表单渲染、
+  公示版禁用提交等逻辑不需要针对每个自定义模式写分支。
+- `/api/all-modes` 返回内置与自定义模式；Web 发布页与小程序发布页都会动态展示，
+  账号中心管理员区提供新增入口。小程序离线模拟（`miniprogram/utils/mock`）实现了同一套接口。
+
+### 4.13 小程序敏感操作弹窗（本次新增）
+
+- 新增组件 `miniprogram/components/confirm-dialog`：居中、遮罩层拦截滑动与点击、只能确认或取消。
+- 删除征集 / 提交 / 回复、解除身份绑定、删除密钥、轮换（重置）密钥、重置离线数据等操作
+  都通过弹窗二次确认；弹窗展示被操作对象的名称、ID、类型、发布者等信息。
+- 轮换密钥的弹窗附带密码输入框（密码只在本机派生挑战，不发送到服务器）。
+- 删除回复使用 `/api/download` 新增的 `replyIDs`，小程序管理员可以逐条删除回复，与 Web 保持一致。
+
+### 4.14 学生 / 家长视角（v0.1.6，仅前台）
 
 家长没有独立 `auth`，一直使用孩子的学生密钥。是否显示成「家长口吻」属于**纯展示**差异，
 因此做成前端视角，而不是新的角色或 API 概念：
@@ -424,6 +458,8 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 
 答题卡模式在冒烟测试中覆盖：发布答题卡、缺少 `data-answer` 时拒绝发布、页面下发 `data-answer` / `data-score` 且全部必填、
 未全部作答返回 400、`__grade` 批改结果追加在 `desc` 末尾、详情页与列表显示得分。
+
+本次迭代的冒烟测试新增覆盖：`/api/my-uploads`（含按征集 / 提交 ID 过滤）、`/api/my-submissions`、`/api/pending-uploads`（`mine` 标记与个人发布优先）、`/api/new-mode`（成功 / 重复 / 未知继承 / 非管理员）、`/api/all-modes`、自定义答题卡模式的发布与提交校验、发布页自定义模式渲染、账号中心新增模式表单，以及老师首页「我发布的待回复提交」与 Web 列表筛选。
 
 问卷模式在冒烟测试中覆盖：发布问卷、详情页/上传页渲染控件、必填项缺失返回 400、`bot-upload` 答案经 `/api/download` 原样返回、提交详情按题目展示答案、仍允许非 JSON 说明的 API 提交。
 
@@ -514,6 +550,11 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 | v0.1.7 `/api/login-try` 返回 `loginSessionID` / `challengeEncrypt` / `answerEncryptingKey` | ✅ 见 `doc/api.md` 第 12 节 |
 | v0.1.7 `/api/get-auths` 验证后返回 `auths` | ✅ 返回该账号全部 auth 密钥 |
 | v0.1.7 `/api/reset-password` 用 `newPasswordPubKey` 修改公钥 | ✅ 同时作废旧会话与旧密码 |
+| 查询个人所有提交 / 个人发布的所有征集 | ✅ `/api/my-uploads`、`/api/my-submissions`，Web 与小程序均接入 |
+| 教师前端优先展示自己发布的征集中的未回复提交 | ✅ `/api/pending-uploads` + `list_uploads(own_first)`；Web 首页 / 提交列表、小程序首页 |
+| 管理员新增班级征集模式 `{auth, modeName, extendModes}` | ✅ `/api/new-mode`；`/api/all-modes` 列出模式 |
+| 小程序敏感操作弹窗（显示对象信息、必要时密码） | ✅ `components/confirm-dialog`，覆盖删除 / 重置 / 删除密钥 / 解绑等 |
+| 前端保持与后端同步 | ✅ Web 发布页 / 账号中心 / 首页 / 列表；小程序 API 层、离线 mock、发布页与账号页 |
 | `/multi-api` 批量调用，`results` 索引对应，每项自带 `ok`，禁止两次确认接口 | ✅ 顺序执行、最多 100 项，见 `doc/api.md` 第 13 节 |
 | 日志系统（放在 `./log` 下） | ✅ `src/logging.rs` 每日 `app-YYYY-MM-DD.log`，记录启动 / HTTP / 错误 / panic，不写敏感数据 |
 | 「以班级为单位 / 学生以自身为单位」 | ✅ 服务端数据范围隔离 |

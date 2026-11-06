@@ -1,6 +1,7 @@
 {
   "navigationBarTitleText": "账号中心",
   "usingComponents": {
-    "bottom-nav": "/components/bottom-nav/index"
+    "bottom-nav": "/components/bottom-nav/index",
+    "confirm-dialog": "/components/confirm-dialog/index"
   }
 }

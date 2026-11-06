@@ -47,4 +47,21 @@
       <view class="btn small danger" bindtap="onResetMock">{{s.reset}}</view>
     </view>
   </view>
+
+  <confirm-dialog
+    open="{{dialog.open}}"
+    title="{{dialog.title}}"
+    message="{{dialog.message}}"
+    object-label="{{dialog.objectLabel}}"
+    object-info="{{dialog.objectInfo}}"
+    need-password="{{dialog.needPassword}}"
+    password-label="{{dialog.passwordLabel}}"
+    password-placeholder="{{dialog.passwordPlaceholder}}"
+    confirm-text="{{dialog.confirmText}}"
+    cancel-text="{{dialog.cancelText}}"
+    loading="{{dialog.loading}}"
+    danger="{{dialog.danger}}"
+    bind:confirm="onDialogConfirm"
+    bind:cancel="onDialogCancel"
+  />
 </view>

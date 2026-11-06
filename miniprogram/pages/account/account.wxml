@@ -61,42 +61,17 @@
     <view class="section-title">{{s.myAuths}}</view>
     <view class="hint">{{s.refreshPanelHint}}</view>
 
-    <view class="card warn" wx:if="{{refresh.open}}">
+    <view class="card warn" wx:if="{{refresh.open && refresh.newKey}}">
       <view class="section-title">{{s.refreshTitle}}</view>
-      <view class="hint">{{s.refreshDesc}}</view>
-      <view class="notice warn" wx:if="{{refresh.label}}">{{refresh.label}}</view>
-
-      <block wx:if="{{!refresh.newKey}}">
-        <view class="field">
-          <view class="label">{{s.password}}</view>
-          <input
-            class="input"
-            password
-            value="{{refresh.password}}"
-            placeholder="{{s.refreshHint}}"
-            bindinput="onRefreshPassword"
-          />
-          <view class="hint">{{s.refreshHint}}</view>
-        </view>
-        <view class="btn-row">
-          <view class="btn reset-primary block"  bindtap="onRefreshConfirm">
-            {{refresh.loading ? s.refreshWorking : s.refreshConfirm}}
-          </view>
-          <view class="btn ghost block warn" bindtap="onRefreshCancel">{{s.cancel}}</view>
-        </view>
-      </block>
-
-      <block wx:else>
-        <view class="notice warn">{{s.refreshDoneTitle}}</view>
-        <view class="hint">{{s.refreshDoneDesc}}</view>
-        <view class="value mono warn">{{refresh.newKey}}</view>
-        <view class="btn-row">
-          <view class="btn ghost block warn" bindtap="onRefreshCopy">{{s.copyKey}}</view>
-          <view class="btn primary block warn" bindtap="onRefreshCancel">{{s.done}}</view>
-        </view>
-      </block>
+      <view class="notice warn">{{s.refreshDoneTitle}}</view>
+      <view class="hint">{{s.refreshDoneDesc}}</view>
+      <view class="value mono warn">{{refresh.newKey}}</view>
+      <view class="btn-row">
+        <view class="btn ghost block warn" bindtap="onRefreshCopy">{{s.copyKey}}</view>
+        <view class="btn primary block warn" bindtap="onRefreshDone">{{s.done}}</view>
+      </view>
     </view>
-    
+
     <view class="empty" wx:if="{{!bindings.length}}">
       <view class="empty-title">{{s.noAuthsTitle}}</view>
       <view class="empty-desc">{{s.noAuthsDesc}}</view>
@@ -193,6 +168,21 @@
       <view class="hint">{{s.memberNote}}</view>
       <view class="hint">{{s.memberHint}}</view>
 
+      <view class="divider"></view>
+      <view class="section-title">{{s.modeFormTitle}}</view>
+      <view class="field">
+        <view class="label">{{s.modeNameLabel}}</view>
+        <input class="input" value="{{modeForm.name}}" placeholder="{{s.modeNameLabel}}" bindinput="onModeName" maxlength="60" />
+      </view>
+      <view class="field">
+        <view class="label">{{s.modeExtendsLabel}}</view>
+        <input class="input" value="{{modeForm.extends}}" placeholder="{{s.modeExtendPlaceholder}}" bindinput="onModeExtends" maxlength="400" />
+        <view class="hint">{{s.modeHint}}</view>
+      </view>
+      <view class="btn-row">
+        <view class="btn ghost block" bindtap="onAddMode">{{s.modeCreate}}</view>
+      </view>
+
       <view class="card" wx:if="{{generated.length}}">
         <view class="flex-between">
           <view class="section-title">{{s.generatedTitle}}</view>
@@ -226,6 +216,23 @@
     </view>
     <view class="hint" wx:if="{{pwdLoading}}">{{s.deriving}}</view>
   </view>
+
+  <confirm-dialog
+    open="{{dialog.open}}"
+    title="{{dialog.title}}"
+    message="{{dialog.message}}"
+    object-label="{{dialog.objectLabel}}"
+    object-info="{{dialog.objectInfo}}"
+    need-password="{{dialog.needPassword}}"
+    password-label="{{dialog.passwordLabel}}"
+    password-placeholder="{{dialog.passwordPlaceholder}}"
+    confirm-text="{{dialog.confirmText}}"
+    cancel-text="{{dialog.cancelText}}"
+    loading="{{dialog.loading}}"
+    danger="{{dialog.danger}}"
+    bind:confirm="onDialogConfirm"
+    bind:cancel="onDialogCancel"
+  />
 
   <bottom-nav active="account" />
 </view>

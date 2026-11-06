@@ -104,10 +104,12 @@ Page({
         var rows = (res.datas || []).map(function (row) {
           return view.decorateSubmission(row, { pageRole: ctx.pageRole, now: now });
         });
-        // 老师视角只展示「待回复」的提交（与 web 端 home 的 filter=pending 一致）
-        var wantsPending = ctx.role === "teacher";
-        return works
-          .allUploads(ctx.key, ctx.role, { maxSubmissions: 6, filter: wantsPending ? "pending" : "all" })
+        // 老师视角只展示「待回复」的提交，并使用 /api/pending-uploads 的个人发布优先排序。
+        var request =
+          ctx.role === "teacher"
+            ? works.pendingUploads(ctx.key)
+            : works.allUploads(ctx.key, ctx.role, { maxSubmissions: 6, filter: "all" });
+        return request
           .then(function (uploads) {
             var rowsUploads = (uploads.datas || []).map(function (row) {
               return view.decorateUpload(row, { now: now });

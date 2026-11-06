@@ -5,6 +5,7 @@ var config = require("../../utils/config");
 var api = require("../../utils/api");
 var mock = require("../../utils/mock/index.js");
 var ui = require("../../utils/ui");
+var dialog = require("../../utils/dialog");
 
 Page({
   data: {
@@ -13,6 +14,7 @@ Page({
     baseUrl: "",
     testing: false,
     result: null,
+    dialog: dialog.base(),
     s: {},
     defaults: {},
   },
@@ -89,14 +91,30 @@ Page({
 
   onResetMock: function () {
     var self = this;
-    ui
-      .confirm(strings.t("mp_reset_desc"), strings.t("mp_reset_data"))
-      .then(function (yes) {
-        if (!yes) return;
+    dialog.open(this, {
+      title: strings.t("mp_reset_data"),
+      message: strings.t("mp_reset_desc"),
+      objectInfo: [
+        { label: strings.t("mp_data_source"), value: strings.t("mp_mode_offline") },
+        { label: strings.t("mp_dialog_tip"), value: strings.t("mp_dialog_notice") },
+      ],
+      confirmText: strings.t("mp_reset_data"),
+      danger: true,
+      onConfirm: function () {
+        dialog.close(self);
         mock.reset();
         ui.toast(strings.t("mp_reset_done"), "ok");
         self.onShow();
-      });
+      },
+    });
+  },
+
+  onDialogConfirm: function (e) {
+    dialog.confirm(this, e);
+  },
+
+  onDialogCancel: function () {
+    dialog.cancel(this);
   },
 
   onBack: function () {

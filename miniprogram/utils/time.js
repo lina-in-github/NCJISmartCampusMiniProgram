@@ -244,7 +244,7 @@ function typeLabel(kind) {
   }
   if (k === "other") return strings.t("type_other");
   if (k === "") return strings.t("type_generic");
-  return truncateChars(k, 14);
+  return truncateChars(k, 24);
 }
 
 function roleLabel(role) {

@@ -10,6 +10,7 @@ var cache = require("../../utils/cache");
 var surveyLib = require("../../utils/survey");
 var surveyForm = require("../../utils/surveyform");
 var ui = require("../../utils/ui");
+var dialog = require("../../utils/dialog");
 
 Page({
   data: {
@@ -26,6 +27,7 @@ Page({
     hasFields: false,
     sourceNote: "",
     submitting: false,
+    dialog: dialog.base(),
     s: {},
   },
 
@@ -95,7 +97,7 @@ Page({
       var sub = view.decorateSubmission(found.submission, { pageRole: ctx.pageRole, now: now });
       var state = { submission: sub, isForm: sub.isForm, isAnswerSheet: sub.isAnswerSheet };
       if (sub.isForm) {
-        var form = surveyForm.build(found.submission.desc || "", found.submission.type);
+        var form = surveyForm.build(found.submission.desc || "", found.submission.baseType || found.submission.type);
         state.blocks = form.blocks;
         state.answers = form.answers;
         state.hasFields = form.hasFields;
@@ -112,7 +114,7 @@ Page({
             decorated.answers = surveyLib.answerRows(
               found.submission.desc || "",
               row.desc || "",
-              surveyLib.kindMode(found.submission.type)
+              surveyLib.kindMode(found.submission.baseType || found.submission.type)
             ) || [];
             if (sub.isAnswerSheet) {
               var grade = surveyLib.gradeOf(found.submission.desc || "", row.desc || "");
@@ -239,21 +241,42 @@ Page({
     var self = this;
     var ctx = this.data.ctx;
     var sub = this.data.submission;
-    if (!sub) return;
-    ui.confirm(
-      strings.S("toast_delete_confirm_message", sub.name),
-      strings.t("toast_delete_confirm_title")
-    ).then(function (yes) {
-      if (!yes) return;
-      api.delObject({ auth: ctx.key, id: sub.id }).then(function (res) {
-        if (res.ok) {
-          ui.toast(strings.t("toast_deleted"), "ok");
-          wx.reLaunch({ url: "/pages/submissions/submissions" });
-        } else {
-          ui.toast(res.msg || strings.t("flash_delete_failed"), "error");
-        }
-      });
+    if (!sub || !ctx || ctx.role !== "admin") return;
+    dialog.open(this, {
+      title: strings.t("mp_dialog_delete_title"),
+      message: strings.S("toast_delete_confirm_message", sub.name),
+      objectInfo: [
+        { label: strings.t("mp_dialog_type"), value: sub.typeText || sub.type || "" },
+        { label: strings.t("mp_dialog_id"), value: sub.id },
+        { label: strings.t("mp_dialog_creator"), value: sub.createdBy || "" },
+        { label: strings.t("mp_dialog_tip"), value: strings.t("mp_dialog_notice") },
+      ],
+      confirmText: strings.t("mp_dialog_confirm_delete"),
+      danger: true,
+      onConfirm: function () {
+        dialog.setLoading(self, true);
+        api.delObject({ auth: ctx.key, id: sub.id }).then(function (res) {
+          dialog.close(self);
+          if (res.ok) {
+            ui.toast(strings.t("toast_deleted"), "ok");
+            wx.reLaunch({ url: "/pages/submissions/submissions" });
+          } else {
+            ui.toast(res.msg || strings.t("flash_delete_failed"), "error");
+          }
+        }).catch(function (err) {
+          dialog.close(self);
+          ui.toast(String(err && err.message ? err.message : err), "error");
+        });
+      },
     });
+  },
+
+  onDialogConfirm: function (e) {
+    dialog.confirm(this, e);
+  },
+
+  onDialogCancel: function () {
+    dialog.cancel(this);
   },
 
   onBack: function () {

@@ -10,6 +10,7 @@ var cache = require("../../utils/cache");
 var files = require("../../utils/file");
 var surveyLib = require("../../utils/survey");
 var ui = require("../../utils/ui");
+var dialog = require("../../utils/dialog");
 
 Page({
   data: {
@@ -25,6 +26,7 @@ Page({
     replyText: "",
     sending: false,
     sourceNote: "",
+    dialog: dialog.base(),
     s: {},
   },
 
@@ -77,6 +79,7 @@ Page({
         emptyAnswer: strings.t("survey_answer_empty"),
         openAttachment: strings.t("mp_open_attachment"),
         removeReplyNote: strings.t("mp_reply_delete_note"),
+        deleteReply: strings.t("mp_delete_reply"),
       },
     });
     this.load();
@@ -110,7 +113,12 @@ Page({
           submission: sub,
           upload: upload,
           replies: upload.replyList.map(function (content, idx) {
-            return { content: content, key: "r" + idx, no: idx + 1 };
+            return {
+              content: content,
+              key: "r" + idx,
+              no: idx + 1,
+              id: (upload.replyIDs || [])[idx] || "",
+            };
           }),
           sourceNote: res.source === "device" ? strings.t("mp_local_hint") : "",
         };
@@ -118,7 +126,7 @@ Page({
           state.answers = surveyLib.answerRows(
             res.submission.desc || "",
             res.upload.desc || "",
-            surveyLib.kindMode(res.submission.type)
+            surveyLib.kindMode(res.submission.baseType || res.submission.type)
           ) || [];
           if (sub.isAnswerSheet) {
             var grade = surveyLib.gradeOf(res.submission.desc || "", res.upload.desc || "");
@@ -200,20 +208,79 @@ Page({
   onDeleteUpload: function () {
     var self = this;
     var ctx = this.data.ctx;
-    ui.confirm(
-      strings.S("toast_delete_confirm_message", this.data.upload.title),
-      strings.t("toast_delete_confirm_title")
-    ).then(function (yes) {
-      if (!yes) return;
-      api.delObject({ auth: ctx.key, id: self.uploadId }).then(function (res) {
-        if (res.ok) {
-          ui.toast(strings.t("toast_deleted"), "ok");
-          wx.reLaunch({ url: "/pages/uploads/uploads" });
-        } else {
-          ui.toast(res.msg || strings.t("flash_delete_failed"), "error");
-        }
-      });
+    var upload = this.data.upload;
+    if (!ctx || ctx.role !== "admin" || !upload) return;
+    dialog.open(this, {
+      title: strings.t("mp_dialog_delete_title"),
+      message: strings.S("toast_delete_confirm_message", upload.title),
+      objectInfo: [
+        { label: strings.t("mp_dialog_uploader"), value: upload.uploaderText || "" },
+        { label: strings.t("mp_dialog_submission"), value: upload.submissionName || (this.data.submission && this.data.submission.name) || "" },
+        { label: strings.t("mp_dialog_id"), value: this.uploadId },
+        { label: strings.t("mp_dialog_tip"), value: strings.t("mp_dialog_notice") },
+      ],
+      confirmText: strings.t("mp_dialog_confirm_delete"),
+      danger: true,
+      onConfirm: function () {
+        dialog.setLoading(self, true);
+        api.delObject({ auth: ctx.key, id: self.uploadId }).then(function (res) {
+          dialog.close(self);
+          if (res.ok) {
+            ui.toast(strings.t("toast_deleted"), "ok");
+            wx.reLaunch({ url: "/pages/uploads/uploads" });
+          } else {
+            ui.toast(res.msg || strings.t("flash_delete_failed"), "error");
+          }
+        }).catch(function (err) {
+          dialog.close(self);
+          ui.toast(String(err && err.message ? err.message : err), "error");
+        });
+      },
     });
+  },
+
+  onDeleteReply: function (e) {
+    var self = this;
+    var ctx = this.data.ctx;
+    var reply = this.data.replies[e.currentTarget.dataset.index];
+    if (!ctx || ctx.role !== "admin" || !reply || !reply.id) {
+      ui.toast(strings.t("flash_forbidden"), "error");
+      return;
+    }
+    dialog.open(this, {
+      title: strings.t("mp_dialog_delete_reply_title"),
+      message: strings.t("mp_dialog_delete_reply_message"),
+      objectInfo: [
+        { label: strings.t("mp_dialog_id"), value: reply.id },
+        { label: strings.t("mp_dialog_uploader"), value: (this.data.upload && this.data.upload.uploaderText) || "" },
+        { label: strings.t("mp_dialog_tip"), value: reply.content },
+      ],
+      confirmText: strings.t("mp_dialog_confirm_delete"),
+      danger: true,
+      onConfirm: function () {
+        dialog.setLoading(self, true);
+        api.delObject({ auth: ctx.key, id: reply.id }).then(function (res) {
+          dialog.close(self);
+          if (res.ok) {
+            ui.toast(strings.t("toast_deleted"), "ok");
+            self.load();
+          } else {
+            ui.toast(res.msg || strings.t("flash_delete_failed"), "error");
+          }
+        }).catch(function (err) {
+          dialog.close(self);
+          ui.toast(String(err && err.message ? err.message : err), "error");
+        });
+      },
+    });
+  },
+
+  onDialogConfirm: function (e) {
+    dialog.confirm(this, e);
+  },
+
+  onDialogCancel: function () {
+    dialog.cancel(this);
   },
 
   onReupload: function () {

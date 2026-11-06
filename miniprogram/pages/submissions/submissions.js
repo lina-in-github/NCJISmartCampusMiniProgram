@@ -7,6 +7,7 @@ var view = require("../../utils/view");
 var works = require("../../utils/works");
 var api = require("../../utils/api");
 var ui = require("../../utils/ui");
+var dialog = require("../../utils/dialog");
 
 Page({
   data: {
@@ -15,6 +16,8 @@ Page({
     loading: true,
     rows: [],
     total: 0,
+    scope: "all",
+    dialog: dialog.base(),
     error: "",
     s: {},
   },
@@ -39,6 +42,10 @@ Page({
         goSubmit: strings.t("common_go_submit"),
         noticePinned: strings.t("submission_notice_pinned"),
         noticeNoUpload: strings.t("submission_notice_no_upload"),
+        scopeAll: strings.t("mp_submissions_scope_all"),
+        scopeMine: strings.t("mp_submissions_scope_mine"),
+        myTitle: strings.t("mp_my_submissions_title"),
+        myEmpty: strings.t("mp_my_submissions_empty"),
       },
     });
     this.load();
@@ -49,8 +56,10 @@ Page({
     var ctx = this.data.ctx;
     if (!ctx) return;
     this.setData({ loading: true, error: "" });
-    works
-      .submissions(ctx.key)
+    var request = this.data.scope === "mine" && ctx.staff
+      ? works.mySubmissions(ctx.key)
+      : works.submissions(ctx.key);
+    request
       .then(function (res) {
         if (!res.ok) {
           self.setData({ loading: false, error: res.msg || strings.t("flash_request_failed") });
@@ -93,23 +102,52 @@ Page({
     wx.navigateTo({ url: "/pages/submission-new/submission-new" });
   },
 
+  onScope: function (e) {
+    var scope = e.currentTarget.dataset.scope === "mine" ? "mine" : "all";
+    if (scope === this.data.scope) return;
+    this.setData({ scope: scope });
+    this.load();
+  },
+
   onDelete: function (e) {
     var self = this;
     var row = this.data.rows[e.currentTarget.dataset.index];
-    if (!row) return;
-    ui.confirm(strings.S("toast_delete_confirm_message", row.name), strings.t("toast_delete_confirm_title")).then(
-      function (yes) {
-        if (!yes) return;
+    if (!row || !ctxAdmin(self.data.ctx)) return;
+    dialog.open(this, {
+      title: strings.t("mp_dialog_delete_title"),
+      message: strings.S("toast_delete_confirm_message", row.name),
+      objectInfo: [
+        { label: strings.t("mp_dialog_type"), value: row.typeText || row.type || "" },
+        { label: strings.t("mp_dialog_id"), value: row.id },
+        { label: strings.t("mp_dialog_creator"), value: row.createdBy || "" },
+        { label: strings.t("mp_dialog_tip"), value: strings.t("mp_dialog_notice") },
+      ],
+      confirmText: strings.t("mp_dialog_confirm_delete"),
+      danger: true,
+      onConfirm: function () {
+        dialog.setLoading(self, true);
         api.delObject({ auth: self.data.ctx.key, id: row.id }).then(function (res) {
+          dialog.close(self);
           if (res.ok) {
             ui.toast(strings.t("toast_deleted"), "ok");
             self.load();
           } else {
             ui.toast(res.msg || strings.t("flash_delete_failed"), "error");
           }
+        }).catch(function (err) {
+          dialog.close(self);
+          ui.toast(String(err && err.message ? err.message : err), "error");
         });
-      }
-    );
+      },
+    });
+  },
+
+  onDialogConfirm: function (e) {
+    dialog.confirm(this, e);
+  },
+
+  onDialogCancel: function () {
+    dialog.cancel(this);
   },
 
   onToggleTheme: function () {
@@ -117,3 +155,8 @@ Page({
     theme.apply(this);
   },
 });
+
+/* 小程序端删除征集由服务端校验管理员权限；这里只做入口保护。 */
+function ctxAdmin(ctx) {
+  return !!(ctx && ctx.role === "admin");
+}

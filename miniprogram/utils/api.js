@@ -4,8 +4,14 @@
  *   /api/upload          -> {ok, id}
  *   /api/download        -> {ok, datas:[{id, studentID, shortStudentID, title, desc, data, reply, uploader, role, createdAt}]}
  *   /api/new-submission  -> {ok, id}
- *   /api/all-submission  -> {ok, datas:[{id, name, desc, deadLine, type, createdAt, createdBy,
- *                                        uploadCount, myUploadCount, pendingCount, latestUploadID}]}
+ *   /api/all-submission  -> {ok, datas:[{id, name, desc, deadLine, type, baseType, createdAt, createdBy,
+ *                                        createdByID, uploadCount, myUploadCount, pendingCount, latestUploadID}]}
+ *   /api/my-uploads      -> {ok, datas:[{id, submissionID, submissionName, title, desc, data, reply,
+ *                                        replyIDs, uploader, role, createdAt,...}]}
+ *   /api/my-submissions  -> {ok, datas:[与 all-submission 相同]}
+ *   /api/pending-uploads -> {ok, datas:[与 my-uploads 相同 + mine]}
+ *   /api/new-mode        -> {ok, id, modeName, extendModes, baseType}
+ *   /api/all-modes       -> {ok, modes, datas}
  *   /api/reply           -> {ok, id}
  *   /api/new-class       -> {ok, id, code, auth, authID}
  *   /api/new-user        -> {ok, IDs, keys, members}
@@ -39,6 +45,31 @@ function newSubmission(payload) {
 
 function allSubmission(payload) {
   return request.post("all-submission", payload);
+}
+
+/** 当前身份的全部提交（支持 submissionID / uploadID / match_mode 过滤）。 */
+function myUploads(payload) {
+  return request.post("my-uploads", payload);
+}
+
+/** 当前身份发布的全部征集。 */
+function mySubmissions(payload) {
+  return request.post("my-submissions", payload);
+}
+
+/** 老师 / 管理员：待回复提交，默认自己发布的征集优先。 */
+function pendingUploads(payload) {
+  return request.post("pending-uploads", payload);
+}
+
+/** 管理员：为班级新增自定义征集模式。 */
+function newMode(payload) {
+  return request.post("new-mode", payload);
+}
+
+/** 班级可用的征集模式（内置 + 自定义）。 */
+function allModes(payload) {
+  return request.post("all-modes", payload);
 }
 
 function reply(payload) {
@@ -139,6 +170,11 @@ module.exports = {
   download: download,
   newSubmission: newSubmission,
   allSubmission: allSubmission,
+  myUploads: myUploads,
+  mySubmissions: mySubmissions,
+  pendingUploads: pendingUploads,
+  newMode: newMode,
+  allModes: allModes,
   reply: reply,
   newClass: newClass,
   newUser: newUser,

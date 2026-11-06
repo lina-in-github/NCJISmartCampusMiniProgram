@@ -980,6 +980,62 @@
   }
 
   // ---------------------------------------------------------------------
+  // 账号中心：新增班级征集模式（管理员）
+  // ---------------------------------------------------------------------
+
+  var modeForm = $("#mode-form");
+  if (modeForm) {
+    modeForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var btn = modeForm.querySelector("button[type=submit]");
+      var adminSelect = $("#mode-admin");
+      var option = adminSelect && adminSelect.options[adminSelect.selectedIndex];
+      var name = ($("#mode-name").value || "").trim();
+      var extendRaw = ($("#mode-extends").value || "").trim();
+      var result = $("#mode-result");
+      if (!option) {
+        toast(S("toast_select_admin"), "error");
+        return;
+      }
+      if (!name) {
+        toast(S("toast_mode_name_required"), "error");
+        return;
+      }
+      var extendModes = extendRaw
+        ? extendRaw
+            .split(/[,，]/)
+            .map(function (s) {
+              return s.trim();
+            })
+            .filter(Boolean)
+        : [];
+      setLoading(btn, true, S("toast_saving"));
+      try {
+        var data = await api("/api/new-mode", {
+          auth: option.value,
+          modeName: name,
+          extendModes: extendModes
+        });
+        if (result) {
+          result.hidden = false;
+          result.textContent = S(
+            "account_mode_created",
+            data.modeName || name,
+            data.baseType || "other"
+          );
+        }
+        toast(S("account_mode_created_toast", data.modeName || name), "ok");
+        $("#mode-name").value = "";
+        $("#mode-extends").value = "";
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        setLoading(btn, false);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // 表单里的字数提示
   // ---------------------------------------------------------------------
 

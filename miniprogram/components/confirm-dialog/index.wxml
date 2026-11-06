@@ -1,0 +1,38 @@
+<view
+  wx:if="{{open}}"
+  class="sc-dialog-mask"
+  catchtouchmove="noop"
+  catchtap="noop"
+>
+  <view class="sc-dialog-card" catchtap="noop">
+    <view class="sc-dialog-title">{{title}}</view>
+    <view class="sc-dialog-message" wx:if="{{message}}">{{message}}</view>
+
+    <view class="sc-dialog-object" wx:if="{{objectLabel || objectInfo.length}}">
+      <view class="sc-dialog-object-head" wx:if="{{objectLabel}}">{{objectLabel}}</view>
+      <view class="sc-dialog-kv" wx:for="{{objectInfo}}" wx:key="label">
+        <view class="sc-dialog-kv-key">{{item.label}}</view>
+        <view class="sc-dialog-kv-val">{{item.value}}</view>
+      </view>
+    </view>
+
+    <view class="field sc-dialog-field" wx:if="{{needPassword}}">
+      <view class="label">{{passwordLabel}}</view>
+      <input
+        class="input"
+        password
+        value="{{password}}"
+        placeholder="{{passwordPlaceholder}}"
+        bindinput="onPasswordInput"
+      />
+    </view>
+
+    <view class="sc-dialog-actions">
+      <view class="btn ghost sc-dialog-btn" bindtap="onCancel">{{cancelText}}</view>
+      <view
+        class="btn {{danger ? 'danger' : 'primary'}} sc-dialog-btn"
+        bindtap="onConfirm"
+      >{{loading ? '…' : confirmText}}</view>
+    </view>
+  </view>
+</view>

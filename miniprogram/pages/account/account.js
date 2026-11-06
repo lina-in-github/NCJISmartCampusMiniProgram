@@ -14,6 +14,7 @@ var sessionStore = require("../../utils/session");
 var config = require("../../utils/config");
 var api = require("../../utils/api");
 var ui = require("../../utils/ui");
+var dialog = require("../../utils/dialog");
 
 var MEMBER_TYPES = [
   { value: "Student", labelKey: "role_student" },
@@ -43,6 +44,8 @@ Page({
     classForm: { name: "", desc: "", classId: "" },
     memberForm: { classId: "", quantity: "3", typeIndex: 0 },
     generated: [],
+    modeForm: { name: "", extends: "" },
+    dialog: dialog.base(),
     pwd: { old: "", new1: "", new2: "" },
     pwdLoading: false,
     refresh: { open: false, key: "", label: "", password: "", loading: false, newKey: "" },
@@ -132,6 +135,12 @@ Page({
         classIdHint: strings.t("mp_class_id_hint"),
         settings: strings.t("mp_settings_title"),
         deriving: strings.t("mp_deriving_key"),
+        modeFormTitle: strings.t("mp_mode_form_title"),
+        modeNameLabel: strings.t("mp_mode_name_label"),
+        modeExtendsLabel: strings.t("mp_mode_extends_label"),
+        modeExtendPlaceholder: strings.t("mp_extend_placeholder"),
+        modeCreate: strings.t("mp_mode_create"),
+        modeHint: strings.t("mp_mode_hint"),
       },
     });
     this.refresh();
@@ -334,23 +343,47 @@ Page({
   onUnbind: function (e) {
     var self = this;
     var key = e.currentTarget.dataset.key;
-    ui.confirm(strings.t("mp_unbind_confirm"), strings.t("mp_unbind_identity")).then(function (yes) {
-      if (!yes) return;
-      account.unbind(key);
-      var session = sessionStore.get();
-      if (session && session.key === key) sessionStore.clear();
-      ui.toast(strings.t("flash_identity_deleted"), "ok");
-      self.refresh();
+    var binding = account.findBinding(key);
+    if (!binding) return;
+    dialog.open(this, {
+      title: strings.t("mp_dialog_unbind_title"),
+      message: strings.t("mp_dialog_unbind_message"),
+      objectInfo: [
+        { label: strings.t("mp_dialog_identity"), value: binding.label || key },
+        { label: strings.t("mp_dialog_key"), value: key },
+        { label: strings.t("mp_dialog_type"), value: time.roleLabel(binding.role) },
+      ],
+      confirmText: strings.t("mp_dialog_confirm_unbind"),
+      danger: true,
+      onConfirm: function () {
+        dialog.close(self);
+        account.unbind(key);
+        var session = sessionStore.get();
+        if (session && session.key === key) sessionStore.clear();
+        ui.toast(strings.t("flash_identity_deleted"), "ok");
+        self.refresh();
+      },
     });
   },
 
   onDeleteKeyRemote: function (e) {
     var self = this;
     var key = e.currentTarget.dataset.key;
-    ui.confirm(strings.S("toast_delete_confirm_message", key), strings.t("toast_delete_confirm_title")).then(
-      function (yes) {
-        if (!yes) return;
+    var binding = account.findBinding(key);
+    dialog.open(this, {
+      title: strings.t("mp_dialog_delete_key_title"),
+      message: strings.t("mp_dialog_delete_key_message"),
+      objectInfo: [
+        { label: strings.t("mp_dialog_identity"), value: (binding && binding.label) || key },
+        { label: strings.t("mp_dialog_key"), value: key },
+        { label: strings.t("mp_dialog_tip"), value: strings.t("mp_dialog_notice") },
+      ],
+      confirmText: strings.t("mp_dialog_confirm_delete_key"),
+      danger: true,
+      onConfirm: function () {
+        dialog.setLoading(self, true);
         api.delKey({ auth: key }).then(function (res) {
+          dialog.close(self);
           if (!res.ok) {
             ui.toast(res.msg || strings.t("flash_delete_failed"), "error");
             return;
@@ -360,61 +393,74 @@ Page({
           if (session && session.key === key) sessionStore.clear();
           ui.toast(strings.t("toast_deleted"), "ok");
           self.refresh();
+        }).catch(function (err) {
+          dialog.close(self);
+          ui.toast(String(err && err.message ? err.message : err), "error");
         });
-      }
-    );
+      },
+    });
   },
 
   onRefreshKey: function (e) {
+    var self = this;
     var key = e.currentTarget.dataset.key;
     var label = e.currentTarget.dataset.label || "";
-    this.setData({
-      refresh: { open: true, key: key, label: label, password: "", loading: false, newKey: "" },
+    dialog.open(this, {
+      title: strings.t("mp_dialog_reset_key_title"),
+      message: strings.t("mp_dialog_reset_key_message"),
+      objectInfo: [
+        { label: strings.t("mp_dialog_identity"), value: label || key },
+        { label: strings.t("mp_dialog_key"), value: key },
+        { label: strings.t("mp_dialog_tip"), value: strings.t("account_refresh_key_hint") },
+      ],
+      needPassword: true,
+      passwordPlaceholder: strings.t("mp_dialog_password_placeholder"),
+      confirmText: strings.t("mp_dialog_confirm_reset"),
+      danger: true,
+      onConfirm: function (password) {
+        if (!password) {
+          ui.toast(strings.t("flash_enter_password"), "error");
+          return;
+        }
+        dialog.setLoading(self, true);
+        account
+          .refreshKey(key, password)
+          .then(function (res) {
+            if (!res.ok) {
+              dialog.setLoading(self, false);
+              ui.toast(strings.t(res.key), "error");
+              return;
+            }
+            dialog.close(self);
+            var session = sessionStore.get();
+            if (session && session.key === res.oldKey) {
+              sessionStore.patch({ key: res.newAuth });
+            }
+            self.setData({
+              refresh: { open: true, key: "", label: label, password: "", loading: false, newKey: res.newAuth },
+            });
+            self.refresh();
+          })
+          .catch(function () {
+            dialog.setLoading(self, false);
+            ui.toast(strings.t("flash_request_failed"), "error");
+          });
+      },
     });
   },
 
-  onRefreshPassword: function (e) {
-    this.setData({ "refresh.password": e.detail.value });
+  onDialogConfirm: function (e) {
+    dialog.confirm(this, e);
   },
 
-  onRefreshCancel: function () {
+  onDialogCancel: function () {
+    dialog.cancel(this);
+  },
+
+  onRefreshDone: function () {
     this.setData({
       refresh: { open: false, key: "", label: "", password: "", loading: false, newKey: "" },
     });
-  },
-
-  onRefreshConfirm: function () {
-    var self = this;
-    var r = this.data.refresh;
-    if (r.loading) return;
-    if (!r.password) {
-      ui.toast(strings.t("flash_enter_password"), "error");
-      return;
-    }
-    this.setData({ "refresh.loading": true });
-    account
-      .refreshKey(r.key, r.password)
-      .then(function (res) {
-        if (!res.ok) {
-          self.setData({ "refresh.loading": false });
-          ui.toast(strings.t(res.key), "error");
-          return;
-        }
-        var session = sessionStore.get();
-        if (session && session.key === res.oldKey) {
-          sessionStore.patch({ key: res.newAuth });
-        }
-        self.setData({
-          "refresh.loading": false,
-          "refresh.password": "",
-          "refresh.newKey": res.newAuth,
-        });
-        self.refresh();
-      })
-      .catch(function () {
-        self.setData({ "refresh.loading": false });
-        ui.toast(strings.t("flash_request_failed"), "error");
-      });
   },
 
   onRefreshCopy: function () {
@@ -526,6 +572,50 @@ Page({
           "s.generatedTitle": strings.S("account_member_generated_title", generated.length),
         });
         ui.toast(strings.S("account_member_generated_toast", (res.keys || []).length), "ok");
+      });
+  },
+
+  onModeName: function (e) {
+    this.setData({ "modeForm.name": e.detail.value });
+  },
+
+  onModeExtends: function (e) {
+    this.setData({ "modeForm.extends": e.detail.value });
+  },
+
+  onAddMode: function () {
+    var self = this;
+    var admin = this.data.adminBindings[this.data.adminIndex];
+    if (!admin) {
+      ui.toast(strings.t("toast_select_admin"), "error");
+      return;
+    }
+    var name = String(this.data.modeForm.name || "").trim();
+    if (!name) {
+      ui.toast(strings.t("mp_mode_name_required"), "error");
+      return;
+    }
+    var extendModes = String(this.data.modeForm.extends || "")
+      .split(/[,，]/)
+      .map(function (v) {
+        return v.trim();
+      })
+      .filter(Boolean);
+    ui.loading(strings.t("toast_saving"));
+    api
+      .newMode({ auth: admin.key, modeName: name, extendModes: extendModes })
+      .then(function (res) {
+        ui.hideLoading();
+        if (!res.ok) {
+          ui.toast(res.msg || strings.t("flash_request_failed"), "error");
+          return;
+        }
+        self.setData({ "modeForm.name": "", "modeForm.extends": "" });
+        ui.toast(strings.S("mp_mode_created", res.modeName || name), "ok");
+      })
+      .catch(function (err) {
+        ui.hideLoading();
+        ui.toast(String(err && err.message ? err.message : err), "error");
       });
   },
 

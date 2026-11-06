@@ -55,6 +55,7 @@ Content-Type: application/json
 - 征集：`sub_*`
 - 提交：`up_*`
 - 回复：`rep_*`
+- 班级自定义征集模式：`mode_*`（内置模式的 ID 为 `builtin_<name>`）
 - 登录挑战会话：`login_*`（仅在 `/api/login-try` 响应中出现，300 秒有效）
 
 ### 0.5 时间
@@ -287,6 +288,7 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
       "desc": "已完成",
       "data": [],
       "reply": ["整体完成得很好。", "注意第 3 题的链式法则。"],
+      "replyIDs": ["rep_aaaaaaaaaaaa", "rep_bbbbbbbbbbbb"],
       "uploader": "陈小满",
       "role": "student",
       "createdAt": "2026-10-24T11:00:00+08:00"
@@ -296,8 +298,8 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 ```
 
 - 需求字段：`studentID`、`shortStudentID`、`title`、`desc`、`data`、`reply`。
-- `reply` 是回复内容字符串数组，按时间升序。
-- 额外字段 `id`、`uploader`、`role`、`createdAt` 便于页面与工具使用。
+- `reply` 是回复内容字符串数组，按时间升序；`replyIDs` 与它一一对应（用于管理员逐条删除回复）。
+- 额外字段 `id`、`submissionID`、`uploader`、`role`、`createdAt` 便于页面与工具使用。
 - 老师/管理员上传的提交 `studentID` 为空字符串、`shortStudentID` 为 0。
 
 ---
@@ -362,8 +364,10 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
       "desc": "完成练习册 P42–P45，拍照上传。",
       "deadLine": "2026-11-01T20:00:00+08:00",
       "type": "homework",
+      "baseType": "homework",
       "createdAt": "2026-10-20T10:00:00+08:00",
       "createdBy": "林书言",
+      "createdByID": "auth_xxxxxxxxxxxx",
       "uploadCount": 2,
       "myUploadCount": 1,
       "pendingCount": 1,
@@ -376,8 +380,176 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 - 学生视角：`uploadCount` 与 `myUploadCount` 都表示本人提交次数；`pendingCount` 表示本人尚未收到回复的提交数。
 - 老师/管理员视角：`uploadCount` 为全班提交数，`pendingCount` 为全班待回复数。
 - `deadLine` 可能为 `null`。
+- `baseType` 是征集的实际行为类型：内置模式与 `type` 相同；班级自定义模式返回它继承的基类
+  （例如 `"type": "maths multiple-choise homework"`、`"baseType": "answer sheet"`）。
+- `createdByID` 是发布者 auth ID，便于客户端判断「是不是我发布的」。
 - 时间状态由页面根据 `deadLine` 计算，API 不再返回展示文案。
 - 截至截止时间的 `notice` 公示版会排在普通征集之前；未设置截止时间的公示版同样置顶。
+
+---
+
+## 4.1 `/api/my-uploads`（个人所有提交）
+
+查询**当前身份**（`auth`）在班级内的全部提交。学生 / 家长与老师 / 管理员都可以调用；返回范围始终是本人，不会返回其他成员的提交。
+
+### 请求
+
+```json
+{
+  "auth": "SC-STU-DEMO-2026",
+  "submissionID": "sub_xxxxxxxxxxxx",
+  "uploadID": "up_xxxxxxxxxxxx",
+  "match_mode": "All",
+  "limit": 500
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `auth` | string | ✅ | 班级密钥 |
+| `submissionID` | string | — | 只看某个征集下的本人提交（也接受 `which`） |
+| `uploadID` | string | — | 只看某一条提交（也接受 `id`） |
+| `match_mode` | string / object | — | 与 `/api/download` 相同的 MatchMode，作用于提交标题 / 学号 / 时间 |
+| `limit` | int | — | 默认 500，最大 2000 |
+
+### 响应
+
+```json
+{
+  "ok": true,
+  "datas": [
+    {
+      "id": "up_xxxxxxxxxxxx",
+      "submissionID": "sub_xxxxxxxxxxxx",
+      "submissionName": "函数与导数 · 周末练习",
+      "studentID": "G2603-01",
+      "shortStudentID": 1,
+      "title": "周末练习",
+      "desc": "已完成",
+      "data": [],
+      "reply": ["整体完成得很好。"],
+      "replyIDs": ["rep_xxxxxxxxxxxx"],
+      "uploader": "陈小满",
+      "role": "student",
+      "createdAt": "2026-10-24T11:00:00+08:00",
+      "submissionCreatedBy": "auth_xxxxxxxxxxxx",
+      "submissionCreatedName": "林书言"
+    }
+  ]
+}
+```
+
+兼容别名：`/api/my-upload`、`/api/all-my-uploads`、`/api/all-my-upload`。
+
+---
+
+## 4.2 `/api/my-submissions`（个人发布的所有征集）
+
+查询当前身份发布的征集（`submissions.created_by = 当前 auth`）。学生 / 家长通常为空数组，老师 / 管理员用于「我发布的征集」视图。
+
+### 请求
+
+```json
+{ "auth": "SC-TEA-DEMO-2026", "match_mode": "All", "limit": 500 }
+```
+
+`match_mode` 与 `/api/all-submission` 一致（作用于征集名称 / 截止时间等）。`limit` 默认 500，最大 2000。
+
+### 响应
+
+`datas` 的字段与 `/api/all-submission` 完全一致（含 `baseType`、`createdByID`、`uploadCount`、`myUploadCount`、`pendingCount`、`latestUploadID`），按发布时间倒序。
+
+兼容别名：`/api/my-submission`、`/api/all-my-submissions`、`/api/all-my-submission`。
+
+---
+
+## 4.3 `/api/pending-uploads`（老师 / 管理员：待回复提交，个人发布优先）
+
+老师 / 管理员前端「我发布的待回复提交」使用该接口。返回所有尚未回复的提交，**自己发布的征集中的提交排在最前**，其余按提交时间倒序。
+
+### 请求
+
+```json
+{ "auth": "SC-TEA-DEMO-2026", "ownOnly": false, "limit": 100 }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `auth` | string | ✅ | 老师 / 管理员密钥；学生返回 403 |
+| `ownOnly` | bool | — | `true` 时只返回自己发布的征集中的待回复提交 |
+| `limit` | int | — | 默认 100，最大 1000 |
+
+### 响应
+
+`datas` 字段与 `/api/my-uploads` 相同，并额外包含：
+
+```json
+{ "id": "up_xxxxxxxxxxxx", "mine": true, "submissionID": "sub_...", "submissionName": "..." }
+```
+
+`mine` 表示该提交所属征集是否由当前教师发布。Web 首页 / 提交列表与小程序首页都使用该顺序。
+
+---
+
+## 4.4 `/api/new-mode`（管理员：为班级新增征集模式）
+
+### 请求（需求字段）
+
+```json
+{
+  "auth": "SC-ADM-DEMO-2026",
+  "modeName": "maths multiple-choise homework",
+  "extendModes": ["homework", "answer sheet"]
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `auth` | string | ✅ | 管理员密钥 |
+| `modeName` | string | ✅ | 模式名称，1–60 字，不能包含控制字符 |
+| `extendModes` | string[] | — | 继承的内置模式或本班已有自定义模式，最多 16 项 |
+
+`extendModes` 可继承：`homework`、`open call`、`leave request`、`survey`、`answer sheet`、`notice`、`other`，以及本班已经定义的自定义模式。行为基类按「答题卡 > 问卷 > 公示 > 作业 > 公开征集 > 请假 > 其他」的顺序确定。
+
+### 响应（成功）
+
+```json
+{
+  "ok": true,
+  "success": true,
+  "id": "mode_xxxxxxxxxxxx",
+  "modeName": "maths multiple-choise homework",
+  "extendModes": ["homework", "answer sheet"],
+  "baseType": "answer sheet",
+  "createdAt": "2026-11-01T20:00:00+08:00",
+  "createdBy": "赵明远"
+}
+```
+
+失败时返回 `{ "ok": false, "msg": "..." }`：重复模式、未知继承模式返回 `400`；非管理员返回 `403`。
+
+发布时把 `modeName` 作为 `/api/new-submission` 的 `type`（也接受 `mode` / `modeName`）。服务端会解析该模式并按其 `baseType` 执行答题卡校验、问卷表单与公示版禁用提交等行为；`/api/all-submission` 的 `type` 保留自定义名称，`baseType` 给出实际行为。
+
+---
+
+## 4.5 `/api/all-modes`（班级可用征集模式）
+
+```json
+{ "auth": "SC-STU-DEMO-2026" }
+```
+
+```json
+{
+  "ok": true,
+  "modes": [
+    { "id": "builtin_homework", "name": "homework", "modeName": "homework", "baseType": "homework", "extendModes": [], "builtin": true },
+    { "id": "mode_xxxxxxxxxxxx", "name": "maths multiple-choise homework", "modeName": "maths multiple-choise homework", "baseType": "answer sheet", "extendModes": ["homework", "answer sheet"], "builtin": false }
+  ],
+  "datas": ["与 modes 相同"]
+}
+```
+
+兼容别名：`/api/class-modes`。Web 发布页、账号中心管理员区与小程序发布页均从这里读取可选模式 / 显示新增结果。
 
 ---
 
@@ -905,6 +1077,8 @@ node scripts/auth-client.js reset --base "$BASE" --username alice --old-password
 - 路径可写 `/api/upload`、`api/upload` 或 `upload`，服务端会规范化为 `/api/upload`；query / fragment 会被忽略。
 - 可以直接内联字段：`{"api": "/api/rename-auth", "auth": "...", "name": "..."}`
   会把除路径字段外的字段作为子请求体。
+- 本次新增的 `/api/my-uploads`、`/api/my-submissions`、`/api/pending-uploads`、
+  `/api/new-mode`、`/api/all-modes` 都可以作为子请求；它们不在禁止列表中。
 - 单个子请求也可以写成字符串 `"/api/health"`，或数组 `["/api/health", {}]`。
 - `data` 作为包装体时必须是对象；上传接口的附件数组请用内联 `data`（数组）或显式 `body`。
 

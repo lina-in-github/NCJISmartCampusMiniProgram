@@ -17,6 +17,23 @@
     <div><button class="btn primary" type="submit">{plus}@[strings/account_class_create]</button></div>
   </form>
   <div class="divider"></div>
+  <form class="stack" id="mode-form">
+    <div class="form-grid">
+      {mode_admin_select}
+      <div class="field">
+        <label class="label" for="mode-name">@[strings/account_mode_name]</label>
+        <input class="input" id="mode-name" type="text" maxlength="60" required placeholder="@[strings/account_mode_name_placeholder]">
+      </div>
+      <div class="field full">
+        <label class="label" for="mode-extends">@[strings/account_mode_extends]</label>
+        <input class="input" id="mode-extends" type="text" maxlength="400" placeholder="@[strings/account_mode_extends_placeholder]">
+        <span class="hint">@[strings/account_mode_extends_hint]</span>
+      </div>
+    </div>
+    <div><button class="btn outline" type="submit">{plus}@[strings/account_mode_create]</button></div>
+    <div class="member-result" id="mode-result" hidden></div>
+  </form>
+  <div class="divider"></div>
   <form class="stack" id="member-form">
     <div class="form-grid">
       {admin_select}

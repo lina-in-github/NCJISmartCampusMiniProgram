@@ -1,15 +1,13 @@
 /* 页面数据组装层：把 `/api` 的响应整理成页面直接渲染的结构。
  *
- * 关键约定：**所有读写都走 /api**（在线与离线同一套契约）。唯一的例外是学生视角的
- * 「读自己的提交」——真实服务没有对应接口（页面由服务端直接查库渲染），因此：
- *   * 离线模式：调用 utils/mock 的本地读取（localUploads / localUpload），体验与服务端渲染一致；
- *   * 在线模式：读取本机提交缓存（utils/cache），至少能看到本机上传过的内容。
- * 这两条路径返回的 `datas` 结构与 `/api/download` 完全一致。
+ * 关键约定：**所有读写都走 /api**（在线与离线同一套契约）。
+ * 学生视角的「读自己的提交」使用 `/api/my-uploads`，教职工视角使用
+ * `/api/download`（单征集全班）与 `/api/pending-uploads`（待回复，个人发布的优先）。
+ * 离线模式由 utils/mock 按同一套契约应答。
  */
 var api = require("./api");
 var mock = require("./mock/index.js");
 var config = require("./config");
-var cache = require("./cache");
 var time = require("./time");
 
 function isOffline() {
@@ -18,6 +16,60 @@ function isOffline() {
 
 function isStaff(role) {
   return role === "teacher" || role === "admin";
+}
+
+function withReplyCount(row) {
+  var copy = {};
+  Object.keys(row || {}).forEach(function (k) {
+    copy[k] = row[k];
+  });
+  copy.replyCount = (row && row.reply) ? row.reply.length : row && row.replyCount ? row.replyCount : 0;
+  copy.replyIDs = (row && row.replyIDs) || [];
+  return copy;
+}
+
+/** `/api/my-uploads`：当前身份的全部提交。 */
+function myUploads(authKey, options) {
+  var opts = options || {};
+  var body = { auth: authKey };
+  if (opts.submissionID) body.submissionID = opts.submissionID;
+  if (opts.uploadID) body.uploadID = opts.uploadID;
+  if (opts.matchMode !== undefined) body.match_mode = opts.matchMode;
+  if (opts.limit !== undefined) body.limit = opts.limit;
+  return api.myUploads(body).then(function (res) {
+    if (!res.ok) return { ok: false, msg: res.msg, status: res.status, datas: [] };
+    return {
+      ok: true,
+      datas: (res.datas || []).map(withReplyCount),
+      source: isOffline() ? "mock" : "api",
+    };
+  });
+}
+
+/** `/api/my-submissions`：当前身份发布的征集。 */
+function mySubmissions(authKey, matchMode) {
+  var body = { auth: authKey };
+  if (matchMode !== undefined) body.match_mode = matchMode;
+  return api.mySubmissions(body).then(function (res) {
+    if (!res.ok) return { ok: false, msg: res.msg, status: res.status, datas: [] };
+    return { ok: true, datas: res.datas || [], source: isOffline() ? "mock" : "api" };
+  });
+}
+
+/** `/api/pending-uploads`：待回复提交，服务端已按「自己发布的征集优先」排序。 */
+function pendingUploads(authKey, options) {
+  var opts = options || {};
+  var body = { auth: authKey };
+  if (opts.ownOnly !== undefined) body.ownOnly = opts.ownOnly;
+  if (opts.limit !== undefined) body.limit = opts.limit;
+  return api.pendingUploads(body).then(function (res) {
+    if (!res.ok) return { ok: false, msg: res.msg, status: res.status, datas: [] };
+    return {
+      ok: true,
+      datas: (res.datas || []).map(withReplyCount),
+      source: isOffline() ? "mock" : "api",
+    };
+  });
 }
 
 /** `/api/all-submission`：征集列表（已是服务端排序） */
@@ -47,16 +99,8 @@ function submissionUploads(authKey, submissionId, role) {
       return { ok: true, datas: res.datas || [], source: isOffline() ? "mock" : "api" };
     });
   }
-  if (isOffline()) {
-    var res = mock.localUploads(authKey, submissionId, true);
-    if (!res.ok) return Promise.resolve({ ok: false, msg: res.msg, status: res.status, datas: [] });
-    return Promise.resolve({ ok: true, datas: res.datas || [], source: "mock" });
-  }
-  return Promise.resolve({
-    ok: true,
-    datas: cache.bySubmission(authKey, submissionId),
-    source: "device",
-  });
+  // 学生：真实服务也提供「个人提交」接口，不再依赖本机缓存。
+  return myUploads(authKey, { submissionID: submissionId });
 }
 
 /** 全部提交（提交列表页）：离线按征集逐个读取，在线教职工逐个 `/api/download`。 */
@@ -83,21 +127,13 @@ function allUploads(authKey, role, options) {
   }
 
   if (!isStaff(role)) {
-    if (isOffline()) {
-      return submissions(authKey).then(function (res) {
-        if (!res.ok) return { ok: false, msg: res.msg, datas: [] };
-        var merged = [];
-        (res.datas || []).forEach(function (sub) {
-          var local = mock.localUploads(authKey, sub.id, true);
-          if (local.ok) merged = merged.concat(decorate(local.datas || [], sub));
-        });
-        return { ok: true, datas: sortByCreatedDesc(merged), source: "mock" };
-      });
-    }
-    return Promise.resolve({
-      ok: true,
-      datas: sortByCreatedDesc(decorate(cache.list(authKey))),
-      source: "device",
+    return myUploads(authKey).then(function (res) {
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        datas: sortByCreatedDesc(res.datas || []),
+        source: res.source,
+      };
     });
   }
 
@@ -200,9 +236,12 @@ function uploadDetail(authKey, uploadId, submissionId, role) {
     });
   }
 
-  var cached = cache.get(uploadId);
-  if (!cached) return Promise.resolve({ ok: false, msg: "upload not found", status: 404 });
-  return withSubmission(cached, "device");
+  return myUploads(authKey, { uploadID: uploadId }).then(function (res) {
+    if (!res.ok) return { ok: false, msg: res.msg, status: res.status };
+    var row = (res.datas || [])[0];
+    if (!row) return { ok: false, msg: "upload not found", status: 404 };
+    return withSubmission(row, res.source);
+  });
 }
 
 /** 首页统计（服务端没有专门的统计接口，这里用征集与提交数据推导） */
@@ -246,6 +285,9 @@ module.exports = {
   isOffline: isOffline,
   isStaff: isStaff,
   submissions: submissions,
+  mySubmissions: mySubmissions,
+  myUploads: myUploads,
+  pendingUploads: pendingUploads,
   findSubmission: findSubmission,
   submissionUploads: submissionUploads,
   allUploads: allUploads,

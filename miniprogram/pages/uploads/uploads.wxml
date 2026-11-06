@@ -23,6 +23,9 @@
     <view class="tab {{filter === 'replied' ? 'active' : ''}}" data-filter="replied" bindtap="onFilter">
       {{s.tabReplied}} {{counts.replied}}
     </view>
+    <view class="tab {{filter === 'mine' ? 'active' : ''}}" data-filter="mine" bindtap="onFilter">
+      {{s.tabMine}} {{counts.mine}}
+    </view>
   </view>
 
   <view class="notice danger" wx:if="{{error}}">{{error}}</view>
@@ -31,7 +34,7 @@
 
   <view class="empty" wx:if="{{!loading && !rows.length}}">
     <view class="empty-title">
-      {{filter === 'pending' ? s.emptyPending : (filter === 'replied' ? s.emptyReplied : s.emptyAll)}}
+      {{filter === 'pending' ? s.emptyPending : (filter === 'replied' ? s.emptyReplied : (filter === 'mine' ? s.emptyMine : s.emptyAll))}}
     </view>
     <view class="empty-desc">
       {{ctx.staff ? s.emptyDescStaff : (ctx.parent ? s.emptyDescParent : s.emptyDescSelf)}}
@@ -51,6 +54,7 @@
         {{item.uploaderText}}<text wx:if="{{item.studentNo}}"> · {{item.studentNo}}</text>
       </view>
       <view class="row-sub" wx:if="{{item.submissionName}}">{{item.submissionName}}</view>
+      <view class="chip pinned" wx:if="{{item.mine}}">{{s.mineBadge}}</view>
       <view class="row-desc" wx:if="{{item.descShort && !item.gradeText}}">{{item.descShort}}</view>
       <view class="card-foot">
         <view>{{item.timeText}}</view>

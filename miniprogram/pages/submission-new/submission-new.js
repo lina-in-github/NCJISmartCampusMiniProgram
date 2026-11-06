@@ -7,13 +7,13 @@ var api = require("../../utils/api");
 var ui = require("../../utils/ui");
 
 var TYPES = [
-  { value: "homework", labelKey: "type_homework" },
-  { value: "open call", labelKey: "type_open_call" },
-  { value: "leave request", labelKey: "type_leave_request" },
-  { value: "survey", labelKey: "type_survey" },
-  { value: "answer sheet", labelKey: "type_answer_sheet" },
-  { value: "notice", labelKey: "type_notice" },
-  { value: "other", labelKey: "type_other" },
+  { value: "homework", labelKey: "type_homework", base: "homework" },
+  { value: "open call", labelKey: "type_open_call", base: "open call" },
+  { value: "leave request", labelKey: "type_leave_request", base: "leave request" },
+  { value: "survey", labelKey: "type_survey", base: "survey" },
+  { value: "answer sheet", labelKey: "type_answer_sheet", base: "answer sheet" },
+  { value: "notice", labelKey: "type_notice", base: "notice" },
+  { value: "other", labelKey: "type_other", base: "other" },
 ];
 
 Page({
@@ -24,7 +24,10 @@ Page({
     desc: "",
     typeIndex: 0,
     typeLabels: [],
+    typeValues: [],
+    typeBases: [],
     typeValue: "homework",
+    typeBase: "homework",
     hasDeadline: true,
     date: "",
     time: "20:00",
@@ -48,9 +51,22 @@ Page({
       wx.reLaunch({ url: "/pages/submissions/submissions" });
       return;
     }
+    var baseTypes = TYPES.map(function (t) {
+      return {
+        value: t.value,
+        label: strings.t(t.labelKey),
+        base: t.base,
+      };
+    });
     this.setData({
-      typeLabels: TYPES.map(function (t) {
-        return strings.t(t.labelKey);
+      typeLabels: baseTypes.map(function (t) {
+        return t.label;
+      }),
+      typeValues: baseTypes.map(function (t) {
+        return t.value;
+      }),
+      typeBases: baseTypes.map(function (t) {
+        return t.base;
       }),
       s: {
         title: strings.t("new_page_title"),
@@ -78,6 +94,32 @@ Page({
         save: strings.t("common_save"),
       },
     });
+    this.loadModes(ctx);
+  },
+
+  /** 班级自定义征集模式（管理员通过 /api/new-mode 添加）。 */
+  loadModes: function (ctx) {
+    var self = this;
+    api.allModes({ auth: ctx.key }).then(function (res) {
+      if (!res.ok || !res.modes) return;
+      var known = {};
+      self.data.typeValues.forEach(function (v) {
+        known[String(v).toLowerCase()] = true;
+      });
+      var labels = self.data.typeLabels.slice();
+      var values = self.data.typeValues.slice();
+      var bases = self.data.typeBases.slice();
+      (res.modes || []).forEach(function (mode) {
+        if (mode.builtin) return;
+        var name = mode.modeName || mode.name || "";
+        if (!name || known[String(name).toLowerCase()]) return;
+        known[String(name).toLowerCase()] = true;
+        labels.push(name);
+        values.push(name);
+        bases.push(mode.baseType || "other");
+      });
+      self.setData({ typeLabels: labels, typeValues: values, typeBases: bases });
+    });
   },
 
   onName: function (e) {
@@ -90,7 +132,13 @@ Page({
 
   onType: function (e) {
     var idx = parseInt(e.detail.value, 10) || 0;
-    this.setData({ typeIndex: idx, typeValue: TYPES[idx].value });
+    var values = this.data.typeValues;
+    var bases = this.data.typeBases;
+    this.setData({
+      typeIndex: idx,
+      typeValue: values[idx] || "homework",
+      typeBase: bases[idx] || "homework",
+    });
   },
 
   onDeadlineSwitch: function (e) {

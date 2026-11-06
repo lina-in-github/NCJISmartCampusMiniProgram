@@ -97,6 +97,12 @@
         <view class="reply-head">
           <view class="avatar">师</view>
           <view>{{s.repliesTitle}} {{item.no}} · {{s.replyRoleHint}}</view>
+          <view
+            class="btn ghost small"
+            wx:if="{{ctx.role === 'admin' && item.id}}"
+            data-index="{{index}}"
+            catchtap="onDeleteReply"
+          >{{s.deleteReply}}</view>
         </view>
         <view class="reply-body">{{item.content}}</view>
       </view>
@@ -131,4 +137,21 @@
 
     <view class="notice" wx:if="{{sourceNote}}">{{sourceNote}}</view>
   </block>
+
+  <confirm-dialog
+    open="{{dialog.open}}"
+    title="{{dialog.title}}"
+    message="{{dialog.message}}"
+    object-label="{{dialog.objectLabel}}"
+    object-info="{{dialog.objectInfo}}"
+    need-password="{{dialog.needPassword}}"
+    password-label="{{dialog.passwordLabel}}"
+    password-placeholder="{{dialog.passwordPlaceholder}}"
+    confirm-text="{{dialog.confirmText}}"
+    cancel-text="{{dialog.cancelText}}"
+    loading="{{dialog.loading}}"
+    danger="{{dialog.danger}}"
+    bind:confirm="onDialogConfirm"
+    bind:cancel="onDialogCancel"
+  />
 </view>

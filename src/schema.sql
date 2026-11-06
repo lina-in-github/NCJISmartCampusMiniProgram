@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS submissions (
     name         TEXT NOT NULL,
     desc         TEXT NOT NULL DEFAULT '',
     type         TEXT NOT NULL DEFAULT 'homework',
+    -- 自定义征集模式的行为基类（如 survey / answer sheet / notice）。
+    -- 为空时直接使用 type，兼容旧数据库与内置模式。
+    base_type    TEXT,
     deadline     INTEGER,
     created_at   INTEGER NOT NULL,
     created_by   TEXT,
@@ -57,6 +60,23 @@ CREATE TABLE IF NOT EXISTS submissions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_submissions_class ON submissions(class_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_submissions_creator ON submissions(class_id, created_by, created_at);
+
+-- 班级自定义征集模式：一个模式继承若干内置 / 自定义模式的行为。
+CREATE TABLE IF NOT EXISTS class_modes (
+    id           TEXT PRIMARY KEY,
+    class_id     TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    normalized   TEXT NOT NULL,
+    extend_modes TEXT NOT NULL DEFAULT '[]',
+    base_type    TEXT NOT NULL DEFAULT 'other',
+    created_at   INTEGER NOT NULL,
+    created_by   TEXT,
+    created_name TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_class_modes_name
+    ON class_modes(class_id, normalized);
 
 CREATE TABLE IF NOT EXISTS uploads (
     id            TEXT PRIMARY KEY,

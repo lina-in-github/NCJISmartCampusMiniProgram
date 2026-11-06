@@ -1,0 +1,93 @@
+/* 敏感操作确认弹窗：居中、独立层级、遮罩拦截手势。 */
+.sc-dialog-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40rpx;
+  box-sizing: border-box;
+  background: rgba(8, 12, 30, 0.55);
+}
+
+.sc-dialog-card {
+  width: 100%;
+  max-width: 620rpx;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 36rpx 32rpx 28rpx;
+  border-radius: 24rpx;
+  background: var(--surface, #ffffff);
+  color: var(--text, #10131f);
+  box-shadow: 0 24rpx 80rpx rgba(0, 0, 0, 0.28);
+}
+
+.sc-dialog-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.sc-dialog-message {
+  margin-top: 18rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: var(--muted, #666e83);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sc-dialog-object {
+  margin-top: 24rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  background: var(--surface-2, #f7f8fc);
+  border: 2rpx solid var(--border, #dfe3ef);
+}
+
+.sc-dialog-object-head {
+  font-size: 22rpx;
+  color: var(--muted, #666e83);
+  margin-bottom: 10rpx;
+}
+
+.sc-dialog-kv {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 8rpx 0;
+  font-size: 25rpx;
+  line-height: 1.45;
+}
+
+.sc-dialog-kv-key {
+  flex: 0 0 120rpx;
+  color: var(--muted, #666e83);
+}
+
+.sc-dialog-kv-val {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.sc-dialog-field {
+  margin-top: 24rpx;
+  margin-bottom: 0;
+}
+
+.sc-dialog-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 32rpx;
+}
+
+.sc-dialog-btn {
+  flex: 1;
+}

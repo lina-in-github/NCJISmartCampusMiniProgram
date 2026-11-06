@@ -8,8 +8,8 @@ use crate::tools::{
     b64_encode, hash_password, new_auth_key, new_class_code, new_id, now_ts, rand_string,
 };
 use crate::types::{
-    AuthCtx, Prefs, ReplyRow, SubmissionRow, UploadRow, UserCtx, ROLE_ADMIN, ROLE_STUDENT,
-    ROLE_TEACHER,
+    AuthCtx, ClassModeRow, Prefs, ReplyRow, SubmissionRow, UploadRow, UserCtx, ROLE_ADMIN,
+    ROLE_STUDENT, ROLE_TEACHER,
 };
 
 pub const SCHEMA: &str = include_str!("schema.sql");
@@ -61,7 +61,7 @@ pub fn open(path: &str) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
-/// 轻量迁移：为旧数据库补上 `users.pubkey` 列。
+/// 轻量迁移：为旧数据库补上 `users.pubkey` 与 `submissions.base_type` 列。
 fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     let mut has_pubkey = false;
     {
@@ -77,6 +77,22 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     if !has_pubkey {
         conn.execute_batch("ALTER TABLE users ADD COLUMN pubkey TEXT")?;
+    }
+
+    let mut has_base_type = false;
+    {
+        let mut stmt = conn.prepare("PRAGMA table_info(submissions)")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == "base_type" {
+                has_base_type = true;
+                break;
+            }
+        }
+    }
+    if !has_base_type {
+        conn.execute_batch("ALTER TABLE submissions ADD COLUMN base_type TEXT")?;
     }
     Ok(())
 }
@@ -269,6 +285,210 @@ pub fn class_code(db: &Connection, class_id: &str) -> String {
         |r| r.get::<_, String>(0),
     )
     .unwrap_or_else(|_| "CLASS".to_string())
+}
+
+// ---------------------------------------------------------------------------
+// 征集模式（内置模式 + 班级自定义模式）
+// ---------------------------------------------------------------------------
+
+/// 内置征集模式（规范化后的名称）。
+pub const BUILTIN_MODES: &[&str] = &[
+    "homework",
+    "open call",
+    "leave request",
+    "survey",
+    "answer sheet",
+    "notice",
+    "other",
+];
+
+/// 把模式名规范化：去首尾空白、小写、`_` / `-` 视为空格、折叠连续空白。
+pub fn normalize_mode_name(raw: &str) -> String {
+    raw.trim()
+        .to_ascii_lowercase()
+        .replace(['_', '-'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// 内置模式的规范名称（同时兼容若干别名）。
+pub fn builtin_mode(normalized: &str) -> Option<&'static str> {
+    match normalized {
+        "homework" => Some("homework"),
+        "open call" | "opencall" => Some("open call"),
+        "leave request" | "leaverequest" => Some("leave request"),
+        "survey" => Some("survey"),
+        "answer sheet" | "answersheet" | "sheet" => Some("answer sheet"),
+        "notice" => Some("notice"),
+        "other" => Some("other"),
+        _ => None,
+    }
+}
+
+/// 一个已解析的征集模式。
+#[derive(Clone, Debug)]
+pub struct ModeInfo {
+    /// 展示名称（内置模式为规范英文名，自定义模式为创建时的名称）。
+    pub name: String,
+    /// 行为基类：`survey` / `answer sheet` / `notice` / `homework` 等。
+    pub base_type: String,
+}
+
+pub fn list_class_modes(db: &Connection, class_id: &str) -> Vec<ClassModeRow> {
+    let mut stmt = match db.prepare(
+        "SELECT id, name, normalized, extend_modes, base_type, created_at, created_by, created_name
+         FROM class_modes WHERE class_id = ?1 ORDER BY name COLLATE NOCASE, created_at",
+    ) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map(params![class_id], |r| {
+        Ok(ClassModeRow {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            normalized: r.get(2)?,
+            extend_modes: serde_json::from_str::<Vec<String>>(&r.get::<_, String>(3)?)
+                .unwrap_or_default(),
+            base_type: r.get(4)?,
+            created_at: r.get(5)?,
+            created_by: r.get(6)?,
+            created_name: r.get(7)?,
+        })
+    });
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// 解析一个模式名（内置或班级自定义）。返回 `None` 表示未定义。
+pub fn find_mode(db: &Connection, class_id: &str, raw: &str) -> Option<ModeInfo> {
+    let normalized = normalize_mode_name(raw);
+    if normalized.is_empty() {
+        return None;
+    }
+    if let Some(canonical) = builtin_mode(&normalized) {
+        return Some(ModeInfo {
+            name: canonical.to_string(),
+            base_type: canonical.to_string(),
+        });
+    }
+    db.query_row(
+        "SELECT name, normalized, base_type, extend_modes FROM class_modes
+         WHERE class_id = ?1 AND normalized = ?2",
+        params![class_id, normalized],
+        |r| {
+            Ok(ModeInfo {
+                name: r.get(0)?,
+                base_type: r.get(2)?,
+            })
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+/// 解析班级可用的征集模式（内置或自定义）；未定义时返回 `None`。
+pub fn resolve_mode(db: &Connection, class_id: &str, raw: &str) -> Option<ModeInfo> {
+    find_mode(db, class_id, raw)
+}
+
+fn pick_base_type(bases: &[String]) -> String {
+    for candidate in [
+        "answer sheet",
+        "survey",
+        "notice",
+        "homework",
+        "open call",
+        "leave request",
+        "other",
+    ] {
+        if bases.iter().any(|b| b == candidate) {
+            return candidate.to_string();
+        }
+    }
+    bases
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "other".to_string())
+}
+
+/// 创建班级自定义征集模式（管理员）。
+pub fn create_class_mode(
+    db: &Connection,
+    auth: &AuthCtx,
+    name: &str,
+    extends: &[String],
+) -> Result<ClassModeRow, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("modeName must not be empty".to_string());
+    }
+    if name.chars().count() > 60 {
+        return Err("modeName is too long (max 60 characters)".to_string());
+    }
+    if name.chars().any(char::is_control) {
+        return Err("modeName must not contain control characters".to_string());
+    }
+    let normalized = normalize_mode_name(name);
+    if normalized.is_empty() {
+        return Err("modeName must not be empty".to_string());
+    }
+    if find_mode(db, &auth.class_id, &normalized).is_some() {
+        return Err(format!("submission mode already exists: {name}"));
+    }
+    if extends.len() > 16 {
+        return Err("extendModes supports at most 16 entries".to_string());
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut extend_modes = Vec::new();
+    let mut bases = Vec::new();
+    for raw in extends {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        let Some(info) = find_mode(db, &auth.class_id, raw) else {
+            return Err(format!("unknown extend mode: {raw}"));
+        };
+        let normalized = normalize_mode_name(&info.name);
+        if seen.insert(normalized.clone()) {
+            extend_modes.push(normalized);
+            bases.push(info.base_type.clone());
+        }
+    }
+    let base_type = pick_base_type(&bases);
+    let id = new_id("mode");
+    let now = now_ts();
+    db.execute(
+        "INSERT INTO class_modes
+         (id, class_id, name, normalized, extend_modes, base_type, created_at, created_by, created_name)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            id,
+            auth.class_id,
+            name,
+            normalized,
+            serde_json::to_string(&extend_modes).unwrap_or_else(|_| "[]".to_string()),
+            base_type,
+            now,
+            auth.id,
+            auth.identity()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(ClassModeRow {
+        id,
+        name: name.to_string(),
+        normalized,
+        extend_modes,
+        base_type,
+        created_at: now,
+        created_by: Some(auth.id.clone()),
+        created_name: auth.identity(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -468,11 +688,13 @@ pub fn submission_class_id(db: &Connection, id: &str) -> Option<String> {
     .flatten()
 }
 
-/// 上传前需要确认的征集信息：`(class_id, type, desc)`。
-/// 问卷模式要靠 `desc` 解析必填控件，因此一并取出。
+/// 上传前需要确认的征集信息：`(class_id, 生效类型, desc)`。
+/// 生效类型对自定义模式取 `base_type`（如 answer sheet），问卷模式要靠 `desc`
+/// 解析必填控件，因此一并取出。
 pub fn submission_meta(db: &Connection, id: &str) -> Option<(String, String, String)> {
     db.query_row(
-        "SELECT class_id, type, desc FROM submissions WHERE id = ?1",
+        "SELECT class_id, COALESCE(NULLIF(TRIM(base_type), ''), type), desc
+         FROM submissions WHERE id = ?1",
         params![id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )
@@ -516,6 +738,8 @@ fn map_submission_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<SubmissionRow> 
         my_upload_count: r.get(8)?,
         pending_count: r.get(9)?,
         last_upload_id: r.get(10)?,
+        base_kind: r.get(11)?,
+        created_by: r.get(12)?,
     })
 }
 
@@ -537,13 +761,19 @@ fn map_upload_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<UploadRow> {
         auth_id: r.get(11)?,
         reply_count: r.get(12)?,
         last_reply_at: r.get(13)?,
+        submission_created_by: r.get(14)?,
+        submission_created_name: r.get(15)?,
     })
 }
 
-fn submission_sql(staff: bool, with_limit: bool) -> String {
+fn submission_sql(staff: bool, with_limit: bool, own_first: bool) -> String {
     let tail = if with_limit {
         if staff {
-            " LIMIT ?2"
+            if own_first {
+                " LIMIT ?3"
+            } else {
+                " LIMIT ?2"
+            }
         } else {
             " LIMIT ?3"
         }
@@ -551,6 +781,11 @@ fn submission_sql(staff: bool, with_limit: bool) -> String {
         ""
     };
     if staff {
+        let own_order = if own_first {
+            "CASE WHEN s.created_by = ?2 THEN 0 ELSE 1 END, "
+        } else {
+            ""
+        };
         format!(
             "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
                 (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id),
@@ -558,9 +793,10 @@ fn submission_sql(staff: bool, with_limit: bool) -> String {
                 (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id
                     AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
                 (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
-                    ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
+                    ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
+                s.base_type, s.created_by
              FROM submissions s WHERE s.class_id = ?1
-             ORDER BY CASE WHEN LOWER(TRIM(s.type)) = 'notice' AND (s.deadline IS NULL OR s.deadline > CAST(strftime('%s','now') AS INTEGER)) THEN 0 ELSE 1 END, CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
+             ORDER BY CASE WHEN LOWER(TRIM(COALESCE(NULLIF(TRIM(s.base_type), ''), s.type))) = 'notice' AND (s.deadline IS NULL OR s.deadline > CAST(strftime('%s','now') AS INTEGER)) THEN 0 ELSE 1 END, {own_order}CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
         )
     } else {
         format!(
@@ -570,22 +806,32 @@ fn submission_sql(staff: bool, with_limit: bool) -> String {
                 (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2
                     AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
                 (SELECT u.id FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2
-                    ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
+                    ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
+                s.base_type, s.created_by
              FROM submissions s WHERE s.class_id = ?1
-             ORDER BY CASE WHEN LOWER(TRIM(s.type)) = 'notice' AND (s.deadline IS NULL OR s.deadline > CAST(strftime('%s','now') AS INTEGER)) THEN 0 ELSE 1 END, CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
+             ORDER BY CASE WHEN LOWER(TRIM(COALESCE(NULLIF(TRIM(s.base_type), ''), s.type))) = 'notice' AND (s.deadline IS NULL OR s.deadline > CAST(strftime('%s','now') AS INTEGER)) THEN 0 ELSE 1 END, CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
         )
     }
 }
 
-pub fn list_submissions(db: &Connection, auth: &AuthCtx, limit: i64) -> Vec<SubmissionRow> {
+pub fn list_submissions(
+    db: &Connection,
+    auth: &AuthCtx,
+    limit: i64,
+    own_first: bool,
+) -> Vec<SubmissionRow> {
     let staff = auth.is_staff();
-    let sql = submission_sql(staff, true);
+    let sql = submission_sql(staff, true, own_first);
     let mut stmt = match db.prepare(&sql) {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
     let rows = if staff {
-        stmt.query_map(params![auth.class_id, limit], map_submission_row)
+        if own_first {
+            stmt.query_map(params![auth.class_id, auth.id, limit], map_submission_row)
+        } else {
+            stmt.query_map(params![auth.class_id, limit], map_submission_row)
+        }
     } else {
         stmt.query_map(params![auth.class_id, auth.id, limit], map_submission_row)
     };
@@ -604,7 +850,8 @@ pub fn load_submission(db: &Connection, auth: &AuthCtx, sub_id: &str) -> Option<
             (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id
                 AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
             (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
-                ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
+                ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
+            s.base_type, s.created_by
          FROM submissions s WHERE s.id = ?1 AND s.class_id = ?2"
     } else {
         "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
@@ -613,7 +860,8 @@ pub fn load_submission(db: &Connection, auth: &AuthCtx, sub_id: &str) -> Option<
             (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3
                 AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
             (SELECT u.id FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3
-                ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
+                ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
+            s.base_type, s.created_by
          FROM submissions s WHERE s.id = ?1 AND s.class_id = ?2"
     };
     let row = if staff {
@@ -628,12 +876,14 @@ pub fn load_submission(db: &Connection, auth: &AuthCtx, sub_id: &str) -> Option<
     row.optional().ok().flatten()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn list_uploads(
     db: &Connection,
     auth: &AuthCtx,
     filter: Option<&str>,
     limit: i64,
     include_data: bool,
+    own_first: bool,
 ) -> Vec<UploadRow> {
     let staff = auth.is_staff();
     let data_col = if include_data { "u.data" } else { "'[]'" };
@@ -647,24 +897,114 @@ pub fn list_uploads(
         ""
     };
     let own_filter = if staff { "" } else { "AND u.auth_id = ?2" };
+    // 老师 / 管理员：优先展示自己发布的征集中的待回复提交。
+    let order_prefix = if staff && own_first {
+        "CASE WHEN s.created_by = ?2 THEN 0 ELSE 1 END, "
+    } else {
+        ""
+    };
     let sql = format!(
         "SELECT u.id, u.submission_id, s.name, u.title, u.desc, {data_col}, u.created_at,
                 u.uploader_name, u.student_id, u.short_id, u.role, u.auth_id,
                 (SELECT COUNT(*) FROM replies r WHERE r.upload_id = u.id),
-                (SELECT MAX(r.created_at) FROM replies r WHERE r.upload_id = u.id)
+                (SELECT MAX(r.created_at) FROM replies r WHERE r.upload_id = u.id),
+                s.created_by, s.created_name
          FROM uploads u JOIN submissions s ON s.id = u.submission_id
          WHERE u.class_id = ?1 {own_filter} {reply_filter}
-         ORDER BY u.created_at DESC, u.id DESC LIMIT {limit}"
+         ORDER BY {order_prefix}u.created_at DESC, u.id DESC LIMIT {limit}"
     );
     let mut stmt = match db.prepare(&sql) {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
     let rows = if staff {
-        stmt.query_map(params![auth.class_id], map_upload_row)
+        if own_first {
+            stmt.query_map(params![auth.class_id, auth.id], map_upload_row)
+        } else {
+            stmt.query_map(params![auth.class_id], map_upload_row)
+        }
     } else {
         stmt.query_map(params![auth.class_id, auth.id], map_upload_row)
     };
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// 当前身份的提交（个人所有提交）。可选按征集 / 提交 ID 过滤。
+pub fn list_my_uploads(
+    db: &Connection,
+    auth: &AuthCtx,
+    submission_id: Option<&str>,
+    upload_id: Option<&str>,
+    limit: i64,
+    include_data: bool,
+) -> Vec<UploadRow> {
+    let data_col = if include_data { "u.data" } else { "'[]'" };
+    let mut conditions = String::from("u.class_id = ?1 AND u.auth_id = ?2");
+    if submission_id.is_some() {
+        conditions.push_str(" AND u.submission_id = ?3");
+    }
+    if upload_id.is_some() {
+        // 没有 submissionID 时上传 ID 是第 3 个绑定参数。
+        let placeholder = if submission_id.is_some() { "?4" } else { "?3" };
+        conditions.push_str(&format!(" AND u.id = {placeholder}"));
+    }
+    let sql = format!(
+        "SELECT u.id, u.submission_id, s.name, u.title, u.desc, {data_col}, u.created_at,
+                u.uploader_name, u.student_id, u.short_id, u.role, u.auth_id,
+                (SELECT COUNT(*) FROM replies r WHERE r.upload_id = u.id),
+                (SELECT MAX(r.created_at) FROM replies r WHERE r.upload_id = u.id),
+                s.created_by, s.created_name
+         FROM uploads u JOIN submissions s ON s.id = u.submission_id
+         WHERE {conditions}
+         ORDER BY u.created_at DESC, u.id DESC LIMIT {limit}"
+    );
+    let mut stmt = match db.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = match (submission_id, upload_id) {
+        (Some(sub), Some(up)) => {
+            stmt.query_map(params![auth.class_id, auth.id, sub, up], map_upload_row)
+        }
+        (Some(sub), None) => stmt.query_map(params![auth.class_id, auth.id, sub], map_upload_row),
+        (None, Some(up)) => stmt.query_map(params![auth.class_id, auth.id, up], map_upload_row),
+        (None, None) => stmt.query_map(params![auth.class_id, auth.id], map_upload_row),
+    };
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn count_my_uploads(db: &Connection, auth: &AuthCtx) -> i64 {
+    db.query_row(
+        "SELECT COUNT(*) FROM uploads WHERE class_id = ?1 AND auth_id = ?2",
+        params![auth.class_id, auth.id],
+        |r| r.get(0),
+    )
+    .unwrap_or(0)
+}
+
+/// 当前身份发布的征集（个人发布的所有征集）。
+pub fn list_my_submissions(db: &Connection, auth: &AuthCtx, limit: i64) -> Vec<SubmissionRow> {
+    let sql = "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
+            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id),
+            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2),
+            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id
+                AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
+            (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
+                ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
+            s.base_type, s.created_by
+         FROM submissions s WHERE s.class_id = ?1 AND s.created_by = ?2
+         ORDER BY s.created_at DESC, s.id DESC LIMIT ?3";
+    let mut stmt = match db.prepare(sql) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map(params![auth.class_id, auth.id, limit], map_submission_row);
     match rows {
         Ok(iter) => iter.filter_map(Result::ok).collect(),
         Err(_) => Vec::new(),
@@ -677,7 +1017,8 @@ pub fn load_upload(db: &Connection, auth: &AuthCtx, upload_id: &str) -> Option<U
             "SELECT u.id, u.submission_id, s.name, u.title, u.desc, u.data, u.created_at,
                     u.uploader_name, u.student_id, u.short_id, u.role, u.auth_id,
                     (SELECT COUNT(*) FROM replies r WHERE r.upload_id = u.id),
-                    (SELECT MAX(r.created_at) FROM replies r WHERE r.upload_id = u.id)
+                    (SELECT MAX(r.created_at) FROM replies r WHERE r.upload_id = u.id),
+                    s.created_by, s.created_name
              FROM uploads u JOIN submissions s ON s.id = u.submission_id
              WHERE u.id = ?1 AND u.class_id = ?2",
             params![upload_id, auth.class_id],
@@ -911,6 +1252,21 @@ pub fn reply_contents(db: &Connection, upload_id: &str) -> Vec<String> {
     }
 }
 
+/// 回复 ID 列表，顺序与 `reply_contents` 完全一致。
+pub fn reply_ids(db: &Connection, upload_id: &str) -> Vec<String> {
+    let mut stmt = match db
+        .prepare("SELECT id FROM replies WHERE upload_id = ?1 ORDER BY created_at ASC, id ASC")
+    {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map(params![upload_id], |r| r.get::<_, String>(0));
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
 pub fn submission_ids_by_student(db: &Connection, class_id: &str, student_id: &str) -> Vec<String> {
     let mut stmt = match db.prepare(
         "SELECT DISTINCT submission_id FROM uploads
@@ -980,6 +1336,7 @@ pub fn insert_upload(
     Ok(id)
 }
 
+#[allow(dead_code)]
 pub fn insert_submission(
     db: &Connection,
     auth: &AuthCtx,
@@ -988,17 +1345,32 @@ pub fn insert_submission(
     kind: &str,
     deadline: Option<i64>,
 ) -> Result<String, String> {
+    insert_submission_mode(db, auth, name, desc, kind, kind, deadline)
+}
+
+/// 插入征集；`base_kind` 是自定义模式解析出的行为基类。
+#[allow(clippy::too_many_arguments)]
+pub fn insert_submission_mode(
+    db: &Connection,
+    auth: &AuthCtx,
+    name: &str,
+    desc: &str,
+    kind: &str,
+    base_kind: &str,
+    deadline: Option<i64>,
+) -> Result<String, String> {
     let id = new_id("sub");
     db.execute(
         "INSERT INTO submissions
-         (id, class_id, name, desc, type, deadline, created_at, created_by, created_name)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+         (id, class_id, name, desc, type, base_type, deadline, created_at, created_by, created_name)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             id,
             auth.class_id,
             name,
             desc,
             kind,
+            base_kind,
             deadline,
             now_ts(),
             auth.id,
@@ -1232,11 +1604,7 @@ pub fn update_user_pubkey(db: &Connection, user_id: i64, pubkey: &str) -> Result
 }
 
 /// 仅在账号还没有公钥时写入（用于旧密码账号的一次性迁移）。
-pub fn upgrade_user_pubkey(
-    db: &Connection,
-    user_id: i64,
-    pubkey: &str,
-) -> Result<bool, String> {
+pub fn upgrade_user_pubkey(db: &Connection, user_id: i64, pubkey: &str) -> Result<bool, String> {
     let changed = db
         .execute(
             "UPDATE users SET pubkey = ?1, salt = '', pwhash = ''
@@ -2077,6 +2445,102 @@ mod tests {
     }
 
     #[test]
+    fn class_modes_define_and_resolve() {
+        let path = temp_db();
+        {
+            let conn = open(&path).unwrap();
+            let admin = load_auth_by_key(&conn, DEMO_ADMIN_KEY).unwrap();
+            let teacher = load_auth_by_key(&conn, DEMO_TEACHER_KEY).unwrap();
+
+            let mode = create_class_mode(
+                &conn,
+                &admin,
+                "maths multiple-choise homework",
+                &["homework".to_string(), "answer sheet".to_string()],
+            )
+            .expect("create mode");
+            assert_eq!(mode.base_type, "answer sheet");
+            assert_eq!(mode.extend_modes, vec!["homework", "answer sheet"]);
+
+            let found = find_mode(&conn, &admin.class_id, "Maths_Multiple-Choise Homework")
+                .expect("resolve custom mode");
+            assert_eq!(found.name, mode.name);
+            assert_eq!(found.base_type, "answer sheet");
+            assert!(find_mode(&conn, &admin.class_id, "survey").is_some());
+            assert!(find_mode(&conn, &admin.class_id, "not-defined").is_none());
+            assert!(create_class_mode(&conn, &admin, &mode.name, &[]).is_err());
+            assert!(create_class_mode(&conn, &admin, "bad extend", &["nope".to_string()]).is_err());
+            assert_eq!(list_class_modes(&conn, &admin.class_id).len(), 1);
+
+            // 自定义模式按 base_type 生效：答题卡校验与问卷表单都走 answer sheet。
+            let desc = r#"1+1=<input id="form_q1" data-answer="2" data-score="5"/>"#;
+            let sub = insert_submission_mode(
+                &conn,
+                &teacher,
+                "自定义模式征集",
+                desc,
+                &mode.name,
+                &mode.base_type,
+                None,
+            )
+            .expect("insert submission");
+            let (_, effective, _) = submission_meta(&conn, &sub).expect("meta");
+            assert_eq!(effective, "answer sheet");
+            let row = load_submission(&conn, &teacher, &sub).expect("row");
+            assert_eq!(row.kind, mode.name);
+            assert!(row.is_answer_sheet());
+            assert!(row.is_form());
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn personal_queries_and_pending_priority() {
+        let path = temp_db();
+        {
+            let conn = open(&path).unwrap();
+            let teacher = load_auth_by_key(&conn, DEMO_TEACHER_KEY).unwrap();
+            let admin = load_auth_by_key(&conn, DEMO_ADMIN_KEY).unwrap();
+            let student = load_auth_by_key(&conn, DEMO_STUDENT_KEY).unwrap();
+
+            let own_sub = insert_submission(&conn, &teacher, "我的征集", "", "homework", None)
+                .expect("own submission");
+            let other_sub = insert_submission(&conn, &admin, "其他征集", "", "homework", None)
+                .expect("other submission");
+            let own_up = insert_upload(&conn, &student, &own_sub, "我的提交", "", &json!([]))
+                .expect("own upload");
+            let other_up = insert_upload(&conn, &student, &other_sub, "其他提交", "", &json!([]))
+                .expect("other upload");
+
+            let mine = list_my_uploads(&conn, &student, None, None, 100, true);
+            assert!(mine.iter().any(|u| u.id == own_up));
+            assert!(mine.iter().any(|u| u.id == other_up));
+            let only_one = list_my_uploads(&conn, &student, Some(&own_sub), None, 100, true);
+            assert_eq!(only_one.len(), 1);
+            assert_eq!(only_one[0].id, own_up);
+            let one_upload = list_my_uploads(&conn, &student, None, Some(&other_up), 100, true);
+            assert_eq!(one_upload.len(), 1);
+
+            let subs = list_my_submissions(&conn, &teacher, 100);
+            assert!(subs.iter().any(|s| s.id == own_sub));
+            assert!(!subs.iter().any(|s| s.id == other_sub));
+
+            // 待回复提交：老师自己发布的征集优先。
+            let pending = list_uploads(&conn, &teacher, Some("pending"), 100, true, true);
+            assert_eq!(
+                pending.first().map(|u| u.id.as_str()),
+                Some(own_up.as_str())
+            );
+            assert!(pending.iter().any(|u| u.id == other_up));
+            assert!(pending
+                .iter()
+                .find(|u| u.id == own_up)
+                .is_some_and(|u| u.submission_created_by.as_deref() == Some(teacher.id.as_str())));
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn time_helpers_smoke() {
         let t = parse_time("2026-11-01T20:00").unwrap();
         assert_eq!(crate::tools::fmt_datetime(t), "2026-11-01 20:00");
@@ -2089,17 +2553,35 @@ mod tests {
             let conn = open(&path).unwrap();
             let teacher = load_auth_by_key(&conn, DEMO_TEACHER_KEY).unwrap();
             let now = now_ts();
-            let regular =
-                insert_submission(&conn, &teacher, "普通征集", "", "homework", Some(now + 86_400))
-                    .unwrap();
-            let notice =
-                insert_submission(&conn, &teacher, "公示通知", "", "notice", Some(now + 172_800))
-                    .unwrap();
-            let expired =
-                insert_submission(&conn, &teacher, "过期公示", "", "notice", Some(now - 86_400))
-                    .unwrap();
+            let regular = insert_submission(
+                &conn,
+                &teacher,
+                "普通征集",
+                "",
+                "homework",
+                Some(now + 86_400),
+            )
+            .unwrap();
+            let notice = insert_submission(
+                &conn,
+                &teacher,
+                "公示通知",
+                "",
+                "notice",
+                Some(now + 172_800),
+            )
+            .unwrap();
+            let expired = insert_submission(
+                &conn,
+                &teacher,
+                "过期公示",
+                "",
+                "notice",
+                Some(now - 86_400),
+            )
+            .unwrap();
 
-            let rows = list_submissions(&conn, &teacher, 500);
+            let rows = list_submissions(&conn, &teacher, 500, false);
             assert_eq!(rows[0].id, notice);
             assert!(rows[0].is_pinned_notice(now));
             assert!(rows.iter().any(|row| row.id == regular));

@@ -8,7 +8,9 @@ use crate::tools::{
     b64_binary_len, fmt_date, fmt_datetime, fmt_datetime_local, format_size, html_escape, js_json,
     parse_attachment, role_label, truncate_chars,
 };
-use crate::types::{AuthCtx, Prefs, ReplyRow, Session, SubmissionRow, UploadRow, UserCtx};
+use crate::types::{
+    AuthCtx, ClassModeRow, Prefs, ReplyRow, Session, SubmissionRow, UploadRow, UserCtx,
+};
 
 // ---------------------------------------------------------------------------
 // 图标
@@ -204,6 +206,7 @@ fn deadline_chip(deadline: Option<i64>, now: i64) -> (String, &'static str) {
     }
 }
 
+/// 征集类型标签。自定义模式直接显示模式名，过长时截断。
 fn type_label(kind: &str) -> String {
     match kind.trim().to_ascii_lowercase().as_str() {
         "homework" => crate::strings::t("type_homework"),
@@ -218,7 +221,19 @@ fn type_label(kind: &str) -> String {
         }
         "other" => crate::strings::t("type_other"),
         "" => crate::strings::t("type_generic"),
-        other => truncate_chars(other, 14),
+        other => truncate_chars(other, 24),
+    }
+}
+
+/// 自定义模式：显示班级里定义的模式名；内置模式走原有本地化标签。
+fn submission_type_label(row: &SubmissionRow) -> String {
+    let base = row.base_kind.as_deref().unwrap_or("");
+    if !base.trim().is_empty()
+        && crate::db::normalize_mode_name(&row.kind) != crate::db::normalize_mode_name(base)
+    {
+        truncate_chars(&row.kind, 24)
+    } else {
+        type_label(&row.kind)
     }
 }
 
@@ -834,7 +849,7 @@ fn submission_card_link(
 </article>"#,
         href = esc(&href),
         name = esc(&row.name),
-        type_label = esc(&type_label(&row.kind)),
+        type_label = esc(&submission_type_label(row)),
         pin = notice_pin_badge(row, now),
         deadline = deadline_badge(row.deadline, now),
         desc = desc,
@@ -852,8 +867,19 @@ fn submission_card_manage(
     staff: bool,
     admin: bool,
     parent: bool,
+    my_auth_id: &str,
 ) -> String {
     let href = format!("{base}submission/{}/", row.id);
+    let mine = staff && !my_auth_id.is_empty() && row.created_by.as_deref() == Some(my_auth_id);
+    let mine_chip = if mine {
+        format!(
+            r#"<span class="chip pinned">{}{}</span>"#,
+            icon("user"),
+            "@[strings/submission_mine]"
+        )
+    } else {
+        String::new()
+    };
     let count_label = if row.is_notice() {
         crate::strings::t("submission_notice_detail")
     } else if staff {
@@ -897,6 +923,7 @@ fn submission_card_manage(
         r#"<article class="card submission-card">
   <div class="submission-top">
     <span class="chip type">{type_label}</span>
+    {mine_chip}
     {pin}
     {deadline}
   </div>
@@ -912,7 +939,8 @@ fn submission_card_manage(
     {delete}
   </div>
 </article>"#,
-        type_label = esc(&type_label(&row.kind)),
+        type_label = esc(&submission_type_label(row)),
+        mine_chip = mine_chip,
         pin = notice_pin_badge(row, now),
         deadline = deadline_badge(row.deadline, now),
         href = esc(&href),
@@ -937,8 +965,25 @@ fn submission_card_manage(
     )
 }
 
-fn upload_row_html(upload: &UploadRow, now: i64, base: &str, staff: bool) -> String {
+fn upload_row_html(
+    upload: &UploadRow,
+    now: i64,
+    base: &str,
+    staff: bool,
+    my_auth_id: &str,
+) -> String {
     let href = format!("{base}upload/{}/", upload.id);
+    let mine = staff
+        && !my_auth_id.is_empty()
+        && upload.submission_created_by.as_deref() == Some(my_auth_id);
+    let mine_badge = if mine {
+        format!(
+            r#"<span class="chip">{}</span>"#,
+            crate::strings::t("submission_mine")
+        )
+    } else {
+        String::new()
+    };
     let student = if staff {
         if let Some(id) = &upload.student_id {
             format!(r#"<span>{}</span><span class="dot-sep"></span>"#, esc(id))
@@ -981,7 +1026,7 @@ fn upload_row_html(upload: &UploadRow, now: i64, base: &str, staff: bool) -> Str
       <span>{time}</span>
     </div>
   </div>
-  <div class="row-side">{score_chip}{status}{arrow}</div>
+  <div class="row-side">{mine_badge}{score_chip}{status}{arrow}</div>
 </div>"#,
         href = esc(&href),
         avatar_class = avatar_class(&upload.role),
@@ -997,6 +1042,7 @@ fn upload_row_html(upload: &UploadRow, now: i64, base: &str, staff: bool) -> Str
         },
         time = esc(&relative_time(upload.created_at, now)),
         status = upload_status(upload),
+        mine_badge = mine_badge,
         score_chip = score_chip,
         arrow = icon("chevron-right")
     )
@@ -1101,7 +1147,7 @@ pub fn home(
     } else {
         let rows: String = uploads
             .iter()
-            .map(|u| upload_row_html(u, now, &base, ctx.role != "student"))
+            .map(|u| upload_row_html(u, now, &base, ctx.role != "student", &ctx.auth_id))
             .collect();
         format!(r#"<div class="list">{rows}</div>"#)
     };
@@ -1154,6 +1200,7 @@ pub fn submissions(
     staff: bool,
     admin: bool,
     parent: bool,
+    mine: bool,
 ) -> String {
     let now = crate::tools::now_ts();
     let base = ctx.base();
@@ -1166,10 +1213,33 @@ pub fn submissions(
     } else {
         String::new()
     };
+    let scope_tabs = if staff {
+        format!(
+            r#"<div class="segmented" role="tablist">
+  <a class="segment{all}" href="{base}submissions/">@[strings/common_view_all]</a>
+  <a class="segment{mine}" href="{base}submissions/?scope=mine">@[strings/submissions_scope_mine]</a>
+</div>"#,
+            all = if mine { "" } else { " active" },
+            mine = if mine { " active" } else { "" },
+            base = base
+        )
+    } else {
+        String::new()
+    };
     let content = if rows.is_empty() {
         format!(
-            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/home_empty_submissions_title]</div><div class="empty-desc">@[strings/submissions_empty_desc]</div>{new_btn}</div>"#,
+            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">{empty_title}</div><div class="empty-desc">{empty_desc}</div>{new_btn}</div>"#,
             icon = icon("inbox"),
+            empty_title = if mine {
+                "@[strings/submissions_empty_mine_title]"
+            } else {
+                "@[strings/home_empty_submissions_title]"
+            },
+            empty_desc = if mine {
+                "@[strings/submissions_empty_mine_desc]"
+            } else {
+                "@[strings/submissions_empty_desc]"
+            },
             new_btn = if staff {
                 format!(
                     r#"<a class="btn primary" href="{base}submissions/new">@[strings/submissions_publish_first]</a>"#
@@ -1182,7 +1252,15 @@ pub fn submissions(
         let cards: String = rows
             .iter()
             .map(|row| {
-                submission_card_manage(row, now, &base, staff, admin, ctx.page_role == "parent")
+                submission_card_manage(
+                    row,
+                    now,
+                    &base,
+                    staff,
+                    admin,
+                    ctx.page_role == "parent",
+                    &ctx.auth_id,
+                )
             })
             .collect();
         format!(r#"<div class="card-grid">{cards}</div>"#)
@@ -1198,22 +1276,55 @@ pub fn submissions(
     let body = format!(
         r#"<div class="page-head">
   <div>
-    <h2 class="page-title">@[strings/submissions_page_title]</h2>
+    <h2 class="page-title">{title}</h2>
     <p class="page-sub">{page_sub}</p>
   </div>
-  <div class="page-actions">{new_btn}</div>
+  <div class="page-actions">{scope_tabs}{new_btn}</div>
 </div>
 {content}"#,
+        title = if mine {
+            "@[strings/submissions_page_title_mine]"
+        } else {
+            "@[strings/submissions_page_title]"
+        },
         page_sub = page_sub,
+        scope_tabs = scope_tabs,
         new_btn = new_btn,
         content = content
     );
     layout(ctx, &body)
 }
 
-pub fn new_submission(ctx: &LayoutCtx) -> String {
+pub fn new_submission(ctx: &LayoutCtx, modes: &[ClassModeRow]) -> String {
     let base = ctx.base();
     let default_deadline = fmt_datetime_local(crate::tools::now_ts() + 3 * 86_400 + 12 * 3600);
+    // 班级自定义模式：作为额外的 optgroup 交给发布表单，值就是模式名。
+    let mode_options: String = if modes.is_empty() {
+        String::new()
+    } else {
+        let opts: String = modes
+            .iter()
+            .map(|m| {
+                format!(
+                    r#"<option value="{name}" data-base-type="{base_type}">{name}</option>"#,
+                    name = esc(&m.name),
+                    base_type = esc(&m.base_type)
+                )
+            })
+            .collect();
+        format!(
+            r#"<optgroup label="{}">{opts}</optgroup>"#,
+            esc(&crate::strings::t("new_mode_group"))
+        )
+    };
+    let mode_hint = if modes.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<span class="hint">{}</span>"#,
+            esc(&crate::strings::f1("new_mode_hint", modes.len()))
+        )
+    };
     let body = format!(
         include_str!("./views/new_submission.html"),
         base = base,
@@ -1223,7 +1334,9 @@ pub fn new_submission(ctx: &LayoutCtx) -> String {
         display = esc(&ctx.display_name),
         spark = icon("sparkles"),
         class_name = esc(&ctx.class_name),
-        role = esc(&role_label(&ctx.role))
+        role = esc(&role_label(&ctx.role)),
+        mode_options = mode_options,
+        mode_hint = mode_hint
     );
     layout(ctx, &body)
 }
@@ -1234,6 +1347,7 @@ pub fn uploads(
     staff: bool,
     filter: &str,
     counts: (i64, i64, i64),
+    mine_count: i64,
 ) -> String {
     let now = crate::tools::now_ts();
     let base = ctx.base();
@@ -1258,14 +1372,17 @@ pub fn uploads(
   <a class="segment{all}" href="{base}uploads/?filter=all">{all_label}</a>
   <a class="segment{pending}" href="{base}uploads/?filter=pending">{pending_label}</a>
   <a class="segment{replied}" href="{base}uploads/?filter=replied">{replied_label}</a>
+  <a class="segment{mine}" href="{base}uploads/?filter=mine">{mine_label}</a>
 </div>"#,
             all = if filter == "all" { " active" } else { "" },
             pending = if filter == "pending" { " active" } else { "" },
             replied = if filter == "replied" { " active" } else { "" },
+            mine = if filter == "mine" { " active" } else { "" },
             base = base,
             all_label = crate::strings::f1("uploads_tab_all", counts.0),
             pending_label = crate::strings::f1("uploads_tab_pending", counts.1),
-            replied_label = crate::strings::f1("uploads_tab_replied", counts.2)
+            replied_label = crate::strings::f1("uploads_tab_replied", counts.2),
+            mine_label = crate::strings::f1("uploads_tab_mine", mine_count)
         )
     } else {
         format!(
@@ -1282,6 +1399,8 @@ pub fn uploads(
                 "@[strings/uploads_empty_pending]"
             } else if filter == "replied" {
                 "@[strings/uploads_empty_replied]"
+            } else if filter == "mine" {
+                "@[strings/uploads_empty_mine]"
             } else {
                 "@[strings/uploads_empty_all]"
             },
@@ -1297,7 +1416,7 @@ pub fn uploads(
     } else {
         let list: String = rows
             .iter()
-            .map(|u| upload_row_html(u, now, &base, staff))
+            .map(|u| upload_row_html(u, now, &base, staff, &ctx.auth_id))
             .collect();
         format!(r#"<div class="list">{list}</div>"#)
     };
@@ -1322,7 +1441,7 @@ pub fn uploads(
 /// 表单模式下的表单体：问卷（人工批阅）或答题卡（前端自动批改）。
 /// 简介被渲染成可填写的控件，末尾统一由 bot 提交（`title=bot-upload`）。
 fn form_block_html(sub: &SubmissionRow, cancel_link: &str, hint: &str) -> String {
-    let Some(mode) = crate::survey::kind_mode(&sub.kind) else {
+    let Some(mode) = crate::survey::kind_mode(sub.effective_kind()) else {
         return String::new();
     };
     let survey = crate::survey::Survey::parse_mode(&sub.desc, mode);
@@ -1383,7 +1502,7 @@ fn upload_content_html(sub: &SubmissionRow, upload: &UploadRow) -> String {
     if upload.desc.trim().is_empty() {
         return r#"<p class="hint">@[strings/upload_no_desc]</p>"#.to_string();
     }
-    if let Some(mode) = crate::survey::kind_mode(&sub.kind) {
+    if let Some(mode) = crate::survey::kind_mode(sub.effective_kind()) {
         if let Some(rows) = crate::survey::answer_rows(&sub.desc, &upload.desc, mode) {
             let answers: String = rows
                 .into_iter()
@@ -1548,7 +1667,7 @@ pub fn submission_all(
     } else {
         let rows_html: String = rows
             .iter()
-            .map(|u| upload_row_html(u, now, &base, staff))
+            .map(|u| upload_row_html(u, now, &base, staff, &ctx.auth_id))
             .collect();
         format!(r#"<div class="list">{rows_html}</div>"#)
     };
@@ -1562,7 +1681,7 @@ pub fn submission_all(
         upload_btn = upload_btn,
         export = export,
         delete = delete,
-        type_label = esc(&type_label(&sub.kind)),
+        type_label = esc(&submission_type_label(sub)),
         deadline = deadline_badge(sub.deadline, now),
         desc = if sub.is_form() {
             let hint = if sub.is_answer_sheet() {
@@ -1635,7 +1754,7 @@ pub fn notice_detail(ctx: &LayoutCtx, sub: &SubmissionRow, admin: bool) -> Strin
         name = esc(&sub.name),
         created_name = esc(&sub.created_name),
         created = esc(&fmt_datetime(sub.created_at)),
-        type_label = esc(&type_label(&sub.kind)),
+        type_label = esc(&submission_type_label(sub)),
         pinned = if sub.is_pinned_notice(now) {
             format!(
                 r#"<span class="chip pinned">{}{}</span>"#,
@@ -1705,7 +1824,7 @@ pub fn upload_form(
         existing_hint = esc(&existing_hint),
         last_link = last_link,
         folder = icon("folder"),
-        type_label = esc(&type_label(&sub.kind)),
+        type_label = esc(&submission_type_label(sub)),
         deadline = deadline_badge(sub.deadline, now),
         desc = if sub.desc.trim().is_empty() {
             "@[strings/submission_all_no_desc]".to_string()
@@ -1780,7 +1899,7 @@ fn form_upload_page(
         tip = esc(&crate::strings::t(tip_key)),
         form = form_block_html(sub, &format!("{base}submission/{}/all", sub.id), ""),
         folder = icon("folder"),
-        type_label = esc(&type_label(&sub.kind)),
+        type_label = esc(&submission_type_label(sub)),
         deadline = deadline_badge(sub.deadline, now),
         created_name = esc(&sub.created_name),
         created = esc(&fmt_datetime(sub.created_at)),
@@ -2133,10 +2252,7 @@ pub fn user_account(
                 let masked = format!("{head}••••{tail}");
                 let auth_name = a.identity();
                 let student = if a.role == "student" {
-                    format!(
-                        r#"<span>{}</span>"#,
-                        esc(&a.student_no())
-                    )
+                    format!(r#"<span>{}</span>"#, esc(&a.student_no()))
                 } else {
                     String::new()
                 };
@@ -2196,6 +2312,30 @@ pub fn user_account(
         )
     };
 
+    let mode_admin_select = if admin_auths.is_empty() {
+        String::new()
+    } else {
+        let opts: String = admin_auths
+            .iter()
+            .map(|a| {
+                format!(
+                    r#"<option value="{key}" data-class="{class}">{class_name}</option>"#,
+                    key = esc(&a.key),
+                    class = esc(&a.class_id),
+                    class_name = esc(&a.class_name)
+                )
+            })
+            .collect();
+        format!(
+            r#"<div class="field">
+  <label class="label" for="mode-admin">@[strings/account_stats_admin]</label>
+  <select class="select" id="mode-admin">{opts}</select>
+  <span class="hint">@[strings/account_mode_hint]</span>
+</div>"#,
+            opts = opts
+        )
+    };
+
     let admin_area = if admin_auths.is_empty() {
         format!(
             r#"<div class="account-note">{} @[strings/account_not_admin_note]</div>"#,
@@ -2215,6 +2355,7 @@ pub fn user_account(
         format!(
             include_str!("./views/user_account_admin.html"),
             admin_select = admin_select,
+            mode_admin_select = mode_admin_select,
             class_opts = class_opts,
             plus = icon("plus"),
             key = icon("key")
@@ -2228,9 +2369,9 @@ pub fn user_account(
         display = esc(&display),
         username = esc(&user.username),
         n_auths = auths.len(),
-        mode_sel=mode_sel,
-        theme_sel=theme_sel,
-        view_sel=view_sel,
+        mode_sel = mode_sel,
+        theme_sel = theme_sel,
+        view_sel = view_sel,
         n_classes = classes.len(),
         n_admin = admin_auths.len(),
         settings = icon("settings"),
@@ -2240,7 +2381,6 @@ pub fn user_account(
         logout = icon("logout"),
         plus = icon("plus"),
         copy = icon("copy"),
-
         auths = auths_html,
         admin_area = admin_area
     );

@@ -18,10 +18,11 @@ use crate::tools::{
     role_session, session_cookie, valid_username, MatchMode, USID_COOKIE,
 };
 use crate::types::{
-    AllSubmissionReq, AppState, AuthCtx, ByteInput, DelKeyReq, DelObjectReq, DownloadReq,
-    GetAuthsReq, LoginSession, LoginTryReq, MultiApiReq, NewClassReq, NewSubmissionReq, NewUserReq,
+    AllModesReq, AllSubmissionReq, AppState, AuthCtx, ByteInput, DelKeyReq, DelObjectReq,
+    DownloadReq, GetAuthsReq, LoginSession, LoginTryReq, MultiApiReq, MySubmissionsReq,
+    MyUploadsReq, NewClassReq, NewModeReq, NewSubmissionReq, NewUserReq, PendingUploadsReq,
     RefreshKeyReq, RegisterReq, RenameAuthReq, ReplyReq, ResetPasswordReq, SubmissionRow,
-    UpgradePubkeyReq, UploadReq,
+    UpgradePubkeyReq, UploadReq, UploadRow,
 };
 
 const MAX_TITLE: usize = 200;
@@ -152,14 +153,17 @@ pub async fn download(State(st): State<AppState>, Json(req): Json<DownloadReq>) 
     let mut datas = Vec::with_capacity(rows.len());
     for row in rows {
         let replies = db::reply_contents(&db, &row.id);
+        let reply_ids = db::reply_ids(&db, &row.id);
         datas.push(json!({
             "id": row.id,
+            "submissionID": req.which,
             "studentID": row.student_id.clone().unwrap_or_default(),
             "shortStudentID": row.short_id.unwrap_or(0),
             "title": row.title,
             "desc": row.desc,
             "data": row.data,
             "reply": replies,
+            "replyIDs": reply_ids,
             "uploader": row.uploader_name,
             "role": row.role,
             "createdAt": fmt_iso(row.created_at),
@@ -170,8 +174,263 @@ pub async fn download(State(st): State<AppState>, Json(req): Json<DownloadReq>) 
 }
 
 // ---------------------------------------------------------------------------
-// /api/all-submission
+// 个人视角查询：/api/my-uploads、/api/my-submissions、/api/pending-uploads
 // ---------------------------------------------------------------------------
+
+fn upload_json(db: &rusqlite::Connection, row: &UploadRow) -> Value {
+    json!({
+        "id": row.id,
+        "submissionID": row.submission_id,
+        "submissionName": row.submission_name,
+        "studentID": row.student_id.clone().unwrap_or_default(),
+        "shortStudentID": row.short_id.unwrap_or(0),
+        "title": row.title,
+        "desc": row.desc,
+        "data": row.data,
+        "reply": db::reply_contents(db, &row.id),
+        "replyIDs": db::reply_ids(db, &row.id),
+        "uploader": row.uploader_name,
+        "role": row.role,
+        "createdAt": fmt_iso(row.created_at),
+        "submissionCreatedBy": row.submission_created_by,
+        "submissionCreatedName": row.submission_created_name,
+    })
+}
+
+fn submission_json(row: &SubmissionRow) -> Value {
+    json!({
+        "id": row.id,
+        "name": row.name,
+        "desc": row.desc,
+        "deadLine": row.deadline.map(fmt_iso),
+        "type": row.kind,
+        "baseType": row.effective_kind(),
+        "createdAt": fmt_iso(row.created_at),
+        "createdBy": row.created_name,
+        "createdByID": row.created_by,
+        "uploadCount": row.upload_count,
+        "myUploadCount": row.my_upload_count,
+        "pendingCount": row.pending_count,
+        "latestUploadID": row.last_upload_id,
+    })
+}
+
+fn limit_or(value: Option<i64>, default: i64, max: i64) -> i64 {
+    match value {
+        Some(n) if n > 0 => n.min(max),
+        Some(_) => 0,
+        None => default,
+    }
+}
+
+pub async fn my_uploads(State(st): State<AppState>, Json(req): Json<MyUploadsReq>) -> Response {
+    let auth = match require_auth(&st, &req.auth) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let mode = match parse_match_mode(req.match_mode.as_ref()) {
+        Ok(m) => m,
+        Err(e) => return api_bad(e),
+    };
+    let limit = limit_or(req.limit, 500, 2_000);
+    let submission_id = req
+        .submission_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let upload_id = req
+        .upload_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let db = st.db.lock().unwrap();
+    // 指定征集时必须与当前身份同班；否则按个人身份查询，不会泄露其他班级数据。
+    if let Some(sub_id) = submission_id {
+        match db::submission_class_id(&db, sub_id) {
+            Some(c) if c == auth.class_id => {}
+            Some(_) => return api_not_found("submission does not belong to the current class"),
+            None => return api_not_found("submission not found"),
+        }
+    }
+    let mut rows = db::list_my_uploads(&db, &auth, submission_id, upload_id, limit, true);
+    if let Err(e) = apply_upload_match_mode(&mut rows, mode) {
+        return api_bad(e);
+    }
+    let datas: Vec<Value> = rows.iter().map(|row| upload_json(&db, row)).collect();
+    api_ok(json!({ "ok": true, "datas": datas }))
+}
+
+fn apply_upload_match_mode(rows: &mut Vec<UploadRow>, mode: MatchMode) -> Result<(), String> {
+    match mode {
+        MatchMode::All => {}
+        MatchMode::Random(n) => {
+            let mut idx: Vec<usize> = (0..rows.len()).collect();
+            idx.shuffle(&mut rand::thread_rng());
+            idx.truncate(n);
+            idx.sort_unstable();
+            let selected: Vec<UploadRow> = idx.into_iter().map(|i| rows[i].clone()).collect();
+            *rows = selected;
+        }
+        MatchMode::StudentId(id) => {
+            rows.retain(|r| r.student_id.as_deref() == Some(id.as_str()));
+        }
+        MatchMode::ShortStudentId(id) => {
+            rows.retain(|r| r.short_id == Some(id));
+        }
+        MatchMode::TitleRegex(re) => {
+            let regex = Regex::new(&re).map_err(|e| format!("invalid regular expression: {e}"))?;
+            rows.retain(|r| regex.is_match(&r.title));
+        }
+        MatchMode::Before(ts) => {
+            rows.retain(|r| r.created_at < ts);
+        }
+    }
+    Ok(())
+}
+
+pub async fn my_submissions(
+    State(st): State<AppState>,
+    Json(req): Json<MySubmissionsReq>,
+) -> Response {
+    let auth = match require_auth(&st, &req.auth) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let mode = match parse_match_mode(req.match_mode.as_ref()) {
+        Ok(m) => m,
+        Err(e) => return api_bad(e),
+    };
+    let limit = limit_or(req.limit, 500, 2_000);
+    let db = st.db.lock().unwrap();
+    let mut rows: Vec<SubmissionRow> = db::list_my_submissions(&db, &auth, limit);
+    match mode {
+        MatchMode::All => {}
+        MatchMode::Random(n) => {
+            let mut idx: Vec<usize> = (0..rows.len()).collect();
+            idx.shuffle(&mut rand::thread_rng());
+            idx.truncate(n);
+            idx.sort_unstable();
+            let selected: Vec<SubmissionRow> = idx.into_iter().map(|i| rows[i].clone()).collect();
+            rows = selected;
+        }
+        MatchMode::StudentId(id) => {
+            let set = db::submission_ids_by_student(&db, &auth.class_id, &id);
+            rows.retain(|r| set.iter().any(|sid| sid == &r.id));
+        }
+        MatchMode::ShortStudentId(id) => {
+            let set = db::submission_ids_by_short(&db, &auth.class_id, id);
+            rows.retain(|r| set.iter().any(|sid| sid == &r.id));
+        }
+        MatchMode::TitleRegex(re) => {
+            let regex = match Regex::new(&re) {
+                Ok(r) => r,
+                Err(e) => return api_bad(format!("invalid regular expression: {e}")),
+            };
+            rows.retain(|r| regex.is_match(&r.name));
+        }
+        MatchMode::Before(ts) => {
+            rows.retain(|r| r.deadline.is_some_and(|d| d < ts));
+        }
+    }
+    let datas: Vec<Value> = rows.iter().map(submission_json).collect();
+    api_ok(json!({ "ok": true, "datas": datas }))
+}
+
+/// 待回复提交：老师 / 管理员默认「自己发布的征集优先」，其次按提交时间倒序。
+pub async fn pending_uploads(
+    State(st): State<AppState>,
+    Json(req): Json<PendingUploadsReq>,
+) -> Response {
+    let auth = match require_auth(&st, &req.auth) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    if !auth.is_staff() {
+        return api_forbidden("only teachers or admins can view pending uploads");
+    }
+    let limit = limit_or(req.limit, 100, 1_000);
+    let fetch_limit = if req.own_only { 1_000 } else { limit };
+    let db = st.db.lock().unwrap();
+    let rows = db::list_uploads(
+        &db,
+        &auth,
+        Some("pending"),
+        fetch_limit,
+        true,
+        !req.own_only,
+    );
+    let datas: Vec<Value> = rows
+        .iter()
+        .filter(|row| {
+            !req.own_only || row.submission_created_by.as_deref() == Some(auth.id.as_str())
+        })
+        .take(limit.max(0) as usize)
+        .map(|row| {
+            let mut value = upload_json(&db, row);
+            value["mine"] = json!(row.submission_created_by.as_deref() == Some(auth.id.as_str()));
+            value
+        })
+        .collect();
+    api_ok(json!({ "ok": true, "datas": datas }))
+}
+
+// ---------------------------------------------------------------------------
+// 征集模式：/api/new-mode、/api/all-modes
+// ---------------------------------------------------------------------------
+
+fn builtin_mode_json(name: &str) -> Value {
+    json!({
+        "id": format!("builtin_{}", name.replace(' ', "_")),
+        "name": name,
+        "modeName": name,
+        "baseType": name,
+        "extendModes": [],
+        "builtin": true,
+    })
+}
+
+pub async fn all_modes(State(st): State<AppState>, Json(req): Json<AllModesReq>) -> Response {
+    let auth = match require_auth(&st, &req.auth) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let db = st.db.lock().unwrap();
+    let mut modes: Vec<Value> = db::BUILTIN_MODES
+        .iter()
+        .map(|name| builtin_mode_json(name))
+        .collect();
+    modes.extend(
+        db::list_class_modes(&db, &auth.class_id)
+            .iter()
+            .map(|m| m.to_json()),
+    );
+    api_ok(json!({ "ok": true, "modes": modes, "datas": modes }))
+}
+
+pub async fn new_mode(State(st): State<AppState>, Json(req): Json<NewModeReq>) -> Response {
+    let auth = match require_auth(&st, &req.auth) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    if !auth.is_admin() {
+        return api_forbidden("only admins can add submission modes");
+    }
+    let db = st.db.lock().unwrap();
+    match db::create_class_mode(&db, &auth, &req.mode_name, &req.extend_modes) {
+        Ok(mode) => api_ok(json!({
+            "ok": true,
+            "success": true,
+            "id": mode.id,
+            "modeName": mode.name,
+            "extends": mode.extend_modes,
+            "extendModes": mode.extend_modes,
+            "baseType": mode.base_type,
+            "createdAt": fmt_iso(mode.created_at),
+            "createdBy": mode.created_name,
+        })),
+        Err(e) => api_bad(e),
+    }
+}
 
 pub async fn all_submission(
     State(st): State<AppState>,
@@ -186,7 +445,7 @@ pub async fn all_submission(
         Err(e) => return api_bad(e),
     };
     let db = st.db.lock().unwrap();
-    let mut rows: Vec<SubmissionRow> = db::list_submissions(&db, &auth, i64::MAX);
+    let mut rows: Vec<SubmissionRow> = db::list_submissions(&db, &auth, i64::MAX, false);
 
     match mode {
         MatchMode::All => {}
@@ -218,24 +477,7 @@ pub async fn all_submission(
         }
     }
 
-    let datas: Vec<Value> = rows
-        .into_iter()
-        .map(|r| {
-            json!({
-                "id": r.id,
-                "name": r.name,
-                "desc": r.desc,
-                "deadLine": r.deadline.map(fmt_iso),
-                "type": r.kind,
-                "createdAt": fmt_iso(r.created_at),
-                "createdBy": r.created_name,
-                "uploadCount": r.upload_count,
-                "myUploadCount": r.my_upload_count,
-                "pendingCount": r.pending_count,
-                "latestUploadID": r.last_upload_id,
-            })
-        })
-        .collect();
+    let datas: Vec<Value> = rows.iter().map(submission_json).collect();
     api_ok(json!({ "ok": true, "datas": datas }))
 }
 
@@ -279,13 +521,24 @@ pub async fn new_submission(
         Ok(d) => d,
         Err(e) => return api_bad(e),
     };
+    let db = st.db.lock().unwrap();
+    // 内置模式或班级自定义模式：自定义模式用 baseType 决定问卷 / 答题卡 / 公示等行为。
+    let mode = db::resolve_mode(&db, &auth.class_id, &kind);
+    let (kind, base_kind) = match mode {
+        Some(m) => (m.name, m.base_type),
+        None => (kind, "other".to_string()),
+    };
     // 答题卡：简介里必须至少有一道带 id / data-answer / data-score 的题目。
-    if let Some(err) = crate::survey::validate_definition(&kind, &desc) {
+    if let Some(err) = crate::survey::validate_definition(&base_kind, &desc) {
         return api_bad(err);
     }
-    let db = st.db.lock().unwrap();
-    match db::insert_submission(&db, &auth, &name, &desc, &kind, deadline) {
-        Ok(id) => api_ok(json!({ "ok": true, "id": id })),
+    match db::insert_submission_mode(&db, &auth, &name, &desc, &kind, &base_kind, deadline) {
+        Ok(id) => api_ok(json!({
+            "ok": true,
+            "id": id,
+            "type": kind,
+            "baseType": base_kind,
+        })),
         Err(e) => crate::tools::api_err(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             format!("create failed: {e}"),
@@ -825,7 +1078,9 @@ pub async fn refresh_key(State(st): State<AppState>, Json(req): Json<RefreshKeyR
 pub async fn register(State(st): State<AppState>, Json(req): Json<RegisterReq>) -> Response {
     let username = req.username.trim();
     if !valid_username(username) {
-        return api_bad("username must be 2-32 characters and contain only letters, digits, _ or -");
+        return api_bad(
+            "username must be 2-32 characters and contain only letters, digits, _ or -",
+        );
     }
     let pubkey = match decode_pubkey(&req.pubkey) {
         Ok(key) => key,
@@ -1152,6 +1407,16 @@ async fn dispatch_multi_api(
         "/api/download" => call!(DownloadReq, download),
         "/api/new-submission" => call!(NewSubmissionReq, new_submission),
         "/api/all-submission" => call!(AllSubmissionReq, all_submission),
+        "/api/my-uploads" | "/api/my-upload" | "/api/all-my-uploads" | "/api/all-my-upload" => {
+            call!(MyUploadsReq, my_uploads)
+        }
+        "/api/my-submissions"
+        | "/api/my-submission"
+        | "/api/all-my-submissions"
+        | "/api/all-my-submission" => call!(MySubmissionsReq, my_submissions),
+        "/api/pending-uploads" => call!(PendingUploadsReq, pending_uploads),
+        "/api/new-mode" => call!(NewModeReq, new_mode),
+        "/api/all-modes" | "/api/class-modes" => call!(AllModesReq, all_modes),
         "/api/reply" => call!(ReplyReq, reply),
         "/api/new-class" => call!(NewClassReq, new_class),
         "/api/new-user" => call!(NewUserReq, new_user),

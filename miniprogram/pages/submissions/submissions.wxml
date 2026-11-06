@@ -1,7 +1,7 @@
 <view class="app theme-{{theme}}">
   <view class="topbar">
     <view class="topbar-left">
-      <view class="topbar-title">{{s.title}}</view>
+      <view class="topbar-title">{{scope === 'mine' ? s.myTitle : s.title}}</view>
       <view class="topbar-sub">{{countText || ''}}{{ctx.classText ? ' · ' + ctx.classText : ''}}</view>
     </view>
     <view class="topbar-actions">
@@ -10,11 +10,16 @@
     </view>
   </view>
 
+  <view class="tabs" wx:if="{{ctx.staff}}">
+    <view class="tab {{scope === 'all' ? 'active' : ''}}" data-scope="all" bindtap="onScope">{{s.scopeAll}}</view>
+    <view class="tab {{scope === 'mine' ? 'active' : ''}}" data-scope="mine" bindtap="onScope">{{s.scopeMine}}</view>
+  </view>
+
   <view class="notice danger" wx:if="{{error}}">{{error}}</view>
 
   <view class="empty" wx:if="{{!loading && !rows.length}}">
-    <view class="empty-title">{{s.title}}</view>
-    <view class="empty-desc">{{s.emptyDesc}}</view>
+    <view class="empty-title">{{scope === 'mine' ? s.myEmpty : s.title}}</view>
+    <view class="empty-desc">{{scope === 'mine' ? s.myEmpty : s.emptyDesc}}</view>
     <view class="btn-row">
       <view class="btn primary" wx:if="{{ctx.staff}}" bindtap="onPublish">{{s.publishFirst}}</view>
     </view>
@@ -44,6 +49,23 @@
       </view>
     </view>
   </view>
+
+  <confirm-dialog
+    open="{{dialog.open}}"
+    title="{{dialog.title}}"
+    message="{{dialog.message}}"
+    object-label="{{dialog.objectLabel}}"
+    object-info="{{dialog.objectInfo}}"
+    need-password="{{dialog.needPassword}}"
+    password-label="{{dialog.passwordLabel}}"
+    password-placeholder="{{dialog.passwordPlaceholder}}"
+    confirm-text="{{dialog.confirmText}}"
+    cancel-text="{{dialog.cancelText}}"
+    loading="{{dialog.loading}}"
+    danger="{{dialog.danger}}"
+    bind:confirm="onDialogConfirm"
+    bind:cancel="onDialogCancel"
+  />
 
   <bottom-nav active="submissions" />
 </view>

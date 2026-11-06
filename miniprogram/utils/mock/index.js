@@ -120,6 +120,7 @@ function seed() {
     submissions: [],
     uploads: [],
     replies: [],
+    modes: [],
   };
 
   var c1 = newId("cls");
@@ -381,6 +382,7 @@ function load() {
     db = seed();
     storage.writeJson(DB_KEY, db);
   }
+  if (!Array.isArray(db.modes)) db.modes = [];
   return db;
 }
 
@@ -856,8 +858,79 @@ function hasReply(db, uploadId) {
 
 var NOTICE_RE = /^\s*notice\s*$/i;
 
+var BUILTIN_MODES = [
+  "homework",
+  "open call",
+  "leave request",
+  "survey",
+  "answer sheet",
+  "notice",
+  "other",
+];
+
+function normalizeModeName(raw) {
+  return String(raw === null || raw === undefined ? "" : raw)
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(" ");
+}
+
+function builtinMode(normalized) {
+  if (normalized === "homework") return "homework";
+  if (normalized === "open call" || normalized === "opencall") return "open call";
+  if (normalized === "leave request" || normalized === "leaverequest") return "leave request";
+  if (normalized === "survey") return "survey";
+  if (normalized === "answer sheet" || normalized === "answersheet" || normalized === "sheet") {
+    return "answer sheet";
+  }
+  if (normalized === "notice") return "notice";
+  if (normalized === "other") return "other";
+  return null;
+}
+
+function classModesOf(db, classId) {
+  return (db.modes || []).filter(function (m) {
+    return m.class_id === classId;
+  });
+}
+
+function findMode(db, classId, raw) {
+  var normalized = normalizeModeName(raw);
+  if (!normalized) return null;
+  var builtin = builtinMode(normalized);
+  if (builtin) {
+    return {
+      name: builtin,
+      normalized: builtin,
+      baseType: builtin,
+      extendModes: [],
+      builtin: true,
+    };
+  }
+  var found = null;
+  classModesOf(db, classId).forEach(function (m) {
+    if (m.normalized === normalized) found = m;
+  });
+  if (!found) return null;
+  return {
+    name: found.name,
+    normalized: found.normalized,
+    baseType: found.base_type || "other",
+    extendModes: found.extend_modes || [],
+    builtin: false,
+  };
+}
+
+function effectiveKind(sub) {
+  var base = String(sub.base_type || "").trim();
+  return base || String(sub.type || "");
+}
+
 function isNotice(sub) {
-  return NOTICE_RE.test(String(sub.type || ""));
+  return NOTICE_RE.test(effectiveKind(sub));
 }
 
 /** 与 db.rs 的 ORDER BY 等价：公示置顶、过期靠后、无截止时间最后、截止升序、创建倒序 */
@@ -903,8 +976,10 @@ function submissionRow(db, auth, sub, now) {
     desc: sub.desc,
     deadLine: sub.deadline === null ? null : time.fmtISO(sub.deadline),
     type: sub.type,
+    baseType: effectiveKind(sub),
     createdAt: time.fmtISO(sub.created_at),
     createdBy: sub.created_name,
+    createdByID: sub.created_by || null,
     uploadCount: own.length,
     myUploadCount: staff ? 0 : own.length,
     pendingCount: pending.length,
@@ -913,20 +988,38 @@ function submissionRow(db, auth, sub, now) {
 }
 
 function downloadRow(db, upload) {
+  var replies = repliesOfUpload(db, upload.id);
   return {
     id: upload.id,
+    submissionID: upload.submission_id,
     studentID: upload.student_id || "",
     shortStudentID: upload.short_id || 0,
     title: upload.title,
     desc: upload.desc,
     data: upload.data,
-    reply: repliesOfUpload(db, upload.id).map(function (r) {
+    reply: replies.map(function (r) {
       return r.content;
+    }),
+    replyIDs: replies.map(function (r) {
+      return r.id;
     }),
     uploader: upload.uploader_name,
     role: upload.role,
     createdAt: time.fmtISO(upload.created_at),
   };
+}
+
+/** 个人视角的提交行：包含所属征集与「我发布的征集」标记。 */
+function uploadApiRow(db, upload) {
+  var row = downloadRow(db, upload);
+  var sub = null;
+  for (var i = 0; i < db.submissions.length; i++) {
+    if (db.submissions[i].id === upload.submission_id) sub = db.submissions[i];
+  }
+  row.submissionName = sub ? sub.name : "";
+  row.submissionCreatedBy = sub ? sub.created_by || null : null;
+  row.submissionCreatedName = sub ? sub.created_name || "" : "";
+  return row;
 }
 
 // ---------------------------------------------------------------------------
@@ -1045,7 +1138,7 @@ function upload(db, body) {
     return fail(404, "submission does not belong to the current class");
   }
   if (isNotice(sub)) return fail(403, "uploads are disabled for notice submissions");
-  var surveyError = survey.validateSubmission(sub.type, sub.desc, desc);
+  var surveyError = survey.validateSubmission(effectiveKind(sub), sub.desc, desc);
   if (surveyError) return fail(400, surveyError);
 
   var id = newId("up");
@@ -1172,12 +1265,245 @@ function allSubmission(db, body) {
   return ok({ datas: rows });
 }
 
+function applyUploadMatch(db, rows, body) {
+  var parsed = matchmode.parseMatchMode(
+    body.match_mode !== undefined ? body.match_mode : body.matchMode
+  );
+  if (!parsed.ok) return { ok: false, msg: parsed.msg };
+  var mode = parsed.value;
+  if (mode.type === "Random") {
+    var picked = matchmode.applyMode(mode, rows);
+    if (!picked.ok) return { ok: false, msg: picked.msg };
+    rows = picked.rows;
+  } else if (mode.type === "StudentID") {
+    rows = rows.filter(function (u) {
+      return (u.student_id || "") === mode.id;
+    });
+  } else if (mode.type === "ShortStudentID") {
+    rows = rows.filter(function (u) {
+      return (u.short_id || 0) === mode.id;
+    });
+  } else if (mode.type === "TitleReGex") {
+    var applied = matchmode.applyMode(mode, rows, { titleKey: "title" });
+    if (!applied.ok) return { ok: false, msg: applied.msg };
+    rows = applied.rows;
+  } else if (mode.type === "Before") {
+    rows = rows.filter(function (u) {
+      return u.created_at < mode.time;
+    });
+  }
+  return { ok: true, rows: rows };
+}
+
+/** `/api/my-uploads`：当前身份的全部提交。 */
+function myUploads(db, body) {
+  var ctx = requireAuth(db, body);
+  if (ctx.error) return ctx.error;
+  var auth = ctx.auth;
+  var submissionId =
+    typeof body.submissionID === "string"
+      ? body.submissionID
+      : typeof body.which === "string"
+      ? body.which
+      : "";
+  var uploadId =
+    typeof body.uploadID === "string"
+      ? body.uploadID
+      : typeof body.id === "string"
+      ? body.id
+      : "";
+  if (submissionId) {
+    var sub = null;
+    db.submissions.forEach(function (s) {
+      if (s.id === submissionId) sub = s;
+    });
+    if (!sub) return fail(404, "submission not found");
+    if (sub.class_id !== auth.class_id) {
+      return fail(404, "submission does not belong to the current class");
+    }
+  }
+  var limit = 500;
+  if (typeof body.limit === "number" && body.limit > 0) limit = Math.min(body.limit, 2000);
+  var rows = db.uploads
+    .filter(function (u) {
+      if (u.class_id !== auth.class_id || u.auth_id !== auth.id) return false;
+      if (submissionId && u.submission_id !== submissionId) return false;
+      if (uploadId && u.id !== uploadId) return false;
+      return true;
+    })
+    .sort(function (a, b) {
+      return b.created_at - a.created_at;
+    })
+    .slice(0, limit);
+  var applied = applyUploadMatch(db, rows, body);
+  if (!applied.ok) return fail(400, applied.msg);
+  return ok({
+    datas: applied.rows.map(function (u) {
+      return uploadApiRow(db, u);
+    }),
+  });
+}
+
+/** `/api/my-submissions`：当前身份发布的征集。 */
+function mySubmissions(db, body) {
+  var ctx = requireAuth(db, body);
+  if (ctx.error) return ctx.error;
+  var auth = ctx.auth;
+  var now = time.now();
+  var rows = db.submissions
+    .filter(function (s) {
+      return s.class_id === auth.class_id && s.created_by === auth.id;
+    })
+    .sort(function (a, b) {
+      if (a.created_at !== b.created_at) return b.created_at - a.created_at;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+    })
+    .map(function (sub) {
+      return submissionRow(db, auth, sub, now);
+    });
+  return ok({ datas: rows });
+}
+
+/** `/api/pending-uploads`：待回复提交，自己发布的征集优先。 */
+function pendingUploads(db, body) {
+  var ctx = requireAuth(db, body);
+  if (ctx.error) return ctx.error;
+  var auth = ctx.auth;
+  if (auth.role === "student") {
+    return fail(403, "only teachers or admins can view pending uploads");
+  }
+  var ownOnly = body.ownOnly === true;
+  var limit = 100;
+  if (typeof body.limit === "number" && body.limit > 0) limit = Math.min(body.limit, 1000);
+  var subById = {};
+  db.submissions.forEach(function (s) {
+    subById[s.id] = s;
+  });
+  var rows = db.uploads
+    .filter(function (u) {
+      if (u.class_id !== auth.class_id) return false;
+      if (hasReply(db, u.id)) return false;
+      var sub = subById[u.submission_id];
+      if (ownOnly && (!sub || sub.created_by !== auth.id)) return false;
+      return true;
+    })
+    .sort(function (a, b) {
+      var aSub = subById[a.submission_id];
+      var bSub = subById[b.submission_id];
+      var aMine = aSub && aSub.created_by === auth.id ? 0 : 1;
+      var bMine = bSub && bSub.created_by === auth.id ? 0 : 1;
+      if (aMine !== bMine) return aMine - bMine;
+      return b.created_at - a.created_at;
+    })
+    .slice(0, limit);
+  return ok({
+    datas: rows.map(function (u) {
+      var row = uploadApiRow(db, u);
+      row.mine = row.submissionCreatedBy === auth.id;
+      return row;
+    }),
+  });
+}
+
+/** `/api/all-modes`：内置 + 班级自定义征集模式。 */
+function allModes(db, body) {
+  var ctx = requireAuth(db, body);
+  if (ctx.error) return ctx.error;
+  var auth = ctx.auth;
+  var modes = BUILTIN_MODES.map(function (name) {
+    return {
+      id: "builtin_" + name.replace(/ /g, "_"),
+      name: name,
+      modeName: name,
+      baseType: name,
+      extendModes: [],
+      builtin: true,
+    };
+  });
+  classModesOf(db, auth.class_id).forEach(function (m) {
+    modes.push({
+      id: m.id,
+      name: m.name,
+      modeName: m.name,
+      baseType: m.base_type || "other",
+      extendModes: m.extend_modes || [],
+      createdAt: time.fmtISO(m.created_at),
+      createdBy: m.created_name || "",
+      builtin: false,
+    });
+  });
+  return ok({ modes: modes, datas: modes });
+}
+
+/** `/api/new-mode`：管理员新增班级征集模式。 */
+function newMode(db, body) {
+  var ctx = requireAuth(db, body);
+  if (ctx.error) return ctx.error;
+  var auth = ctx.auth;
+  if (auth.role !== "admin") {
+    return fail(403, "only admins can add submission modes");
+  }
+  var nameRes = stringField(body, ["modeName", "mode_name", "name"], "");
+  if (!nameRes.ok) return nameRes.error;
+  var name = nameRes.value.trim();
+  if (!name) return fail(400, "modeName must not be empty");
+  if (charCount(name) > 60) return fail(400, "modeName is too long (max 60 characters)");
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(name)) {
+    return fail(400, "modeName must not contain control characters");
+  }
+  var normalized = normalizeModeName(name);
+  if (findMode(db, auth.class_id, normalized)) {
+    return fail(400, "submission mode already exists: " + name);
+  }
+  var extendsRaw = body.extendModes !== undefined ? body.extendModes : body.extend_modes;
+  if (!Array.isArray(extendsRaw)) extendsRaw = [];
+  if (extendsRaw.length > 16) return fail(400, "extendModes supports at most 16 entries");
+  var extendModes = [];
+  var bases = [];
+  for (var i = 0; i < extendsRaw.length; i++) {
+    var raw = String(extendsRaw[i] === null || extendsRaw[i] === undefined ? "" : extendsRaw[i]).trim();
+    if (!raw) continue;
+    var mode = findMode(db, auth.class_id, raw);
+    if (!mode) return fail(400, "unknown extend mode: " + raw);
+    if (extendModes.indexOf(mode.normalized) >= 0) continue;
+    extendModes.push(mode.normalized);
+    bases.push(mode.baseType);
+  }
+  var baseType = "other";
+  ["answer sheet", "survey", "notice", "homework", "open call", "leave request", "other"].forEach(
+    function (candidate) {
+      if (baseType === "other" && bases.indexOf(candidate) >= 0) baseType = candidate;
+    }
+  );
+  var modeRow = {
+    id: newId("mode"),
+    class_id: auth.class_id,
+    name: name,
+    normalized: normalized,
+    extend_modes: extendModes,
+    base_type: baseType,
+    created_at: time.now(),
+    created_by: auth.id,
+    created_name: identity(auth),
+  };
+  db.modes.push(modeRow);
+  return ok({
+    success: true,
+    id: modeRow.id,
+    modeName: modeRow.name,
+    extendModes: extendModes,
+    baseType: baseType,
+    createdAt: time.fmtISO(modeRow.created_at),
+    createdBy: modeRow.created_name,
+  });
+}
+
 function newSubmission(db, body) {
   var nameRes = requiredStringField(body, ["name"]);
   if (!nameRes.ok) return nameRes.error;
   var descRes = stringField(body, ["desc"], "");
   if (!descRes.ok) return descRes.error;
-  var typeRes = stringField(body, ["type"], "");
+  var typeRes = stringField(body, ["type", "mode", "modeName"], "");
   if (!typeRes.ok) return typeRes.error;
 
   var ctx = requireAuth(db, body);
@@ -1202,7 +1528,10 @@ function newSubmission(db, body) {
   var deadline = time.parseDeadlineValue(deadlineValue === undefined ? null : deadlineValue);
   if (!deadline.ok) return fail(400, deadline.msg);
 
-  var definitionError = survey.validateDefinition(kind, desc);
+  var mode = findMode(db, auth.class_id, kind);
+  var baseKind = mode ? mode.baseType : "other";
+  if (mode) kind = mode.name;
+  var definitionError = survey.validateDefinition(baseKind, desc);
   if (definitionError) return fail(400, definitionError);
 
   var id = newId("sub");
@@ -1212,12 +1541,13 @@ function newSubmission(db, body) {
     name: name,
     desc: desc,
     type: kind,
+    base_type: baseKind,
     deadline: deadline.value,
     created_at: time.now(),
     created_by: auth.id,
     created_name: identity(auth),
   });
-  return ok({ id: id });
+  return ok({ id: id, type: kind, baseType: baseKind });
 }
 
 function reply(db, body) {
@@ -1334,7 +1664,7 @@ function newUser(db, body) {
   if (!classRes.ok) return classRes.error;
   var qtyRes = integerField(body, ["quantity"]);
   if (!qtyRes.ok) return qtyRes.error;
-  var typeRes = stringField(body, ["type"], "");
+  var typeRes = stringField(body, ["type", "mode", "modeName"], "");
   if (!typeRes.ok) return typeRes.error;
 
   var ctx = requireAuth(db, body);
@@ -1467,6 +1797,9 @@ function delObject(db, body) {
     });
     db.classes = db.classes.filter(function (c) {
       return c.id !== classId;
+    });
+    db.modes = (db.modes || []).filter(function (m) {
+      return m.class_id !== classId;
     });
     db.auths = db.auths.filter(function (a) {
       return a.class_id !== classId;
@@ -1635,6 +1968,9 @@ function refreshKey(db, body) {
   db.classes.forEach(function (c) {
     if (c.created_by === oldId) c.created_by = newAuthId;
   });
+  (db.modes || []).forEach(function (m) {
+    if (m.created_by === oldId) m.created_by = newAuthId;
+  });
   user.keys = (user.keys || []).map(function (k) {
     return k === canonicalOldKey ? newKey : k;
   });
@@ -1774,6 +2110,16 @@ var HANDLERS = {
   download: download,
   "new-submission": newSubmission,
   "all-submission": allSubmission,
+  "my-uploads": myUploads,
+  "my-upload": myUploads,
+  "all-my-uploads": myUploads,
+  "my-submissions": mySubmissions,
+  "my-submission": mySubmissions,
+  "all-my-submissions": mySubmissions,
+  "pending-uploads": pendingUploads,
+  "new-mode": newMode,
+  "all-modes": allModes,
+  "class-modes": allModes,
   reply: reply,
   "new-class": newClass,
   "new-user": newUser,

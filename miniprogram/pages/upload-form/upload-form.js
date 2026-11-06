@@ -95,7 +95,7 @@ Page({
         }
         var state = { loading: false, submission: sub };
         if (sub.isForm) {
-          var form = surveyForm.build(res.submission.desc || "", res.submission.type);
+          var form = surveyForm.build(res.submission.desc || "", res.submission.baseType || res.submission.type);
           state.isForm = true;
           state.isAnswerSheet = form.isAnswerSheet;
           state.blocks = form.blocks;

@@ -26,9 +26,11 @@ function decorateSubmission(row, options) {
   var chip = time.deadlineChip(deadlineTs, now);
   var createdTs = row.createdAt ? time.parseTime(row.createdAt) : null;
   var type = String(row.type || "");
-  var notice = NOTICE_RE.test(type);
+  var baseType = String(row.baseType || type);
+  var notice = NOTICE_RE.test(baseType);
 
   out.typeText = time.typeLabel(type);
+  out.baseType = baseType;
   out.deadlineTs = deadlineTs;
   out.deadlineText = chip.text;
   out.deadlineTone = chip.tone;
@@ -37,9 +39,9 @@ function decorateSubmission(row, options) {
   out.createdFull = createdTs === null ? "" : time.fmtDateTime(createdTs);
   out.isNotice = notice;
   out.pinned = notice && (deadlineTs === null || deadlineTs > now);
-  out.isForm = survey.kindMode(type) !== null;
-  out.isSurvey = survey.kindMode(type) === survey.MODE_SURVEY;
-  out.isAnswerSheet = survey.kindMode(type) === survey.MODE_ANSWER_SHEET;
+  out.isForm = survey.kindMode(baseType) !== null;
+  out.isSurvey = survey.kindMode(baseType) === survey.MODE_SURVEY;
+  out.isAnswerSheet = survey.kindMode(baseType) === survey.MODE_ANSWER_SHEET;
   out.descShort = time.truncate(row.desc || "", 90);
 
   var own = staff ? row.uploadCount || 0 : row.myUploadCount || 0;
@@ -98,7 +100,9 @@ function decorateUpload(row, options) {
   out.attachments = attachments.toList(row.data);
   out.attachmentCount = out.attachments.length;
   out.descShort = time.truncate(row.desc || "", 80);
+  out.submissionId = row.submissionId || row.submissionID || "";
   out.submissionName = opts.submissionName || row.submissionName || "";
+  out.mine = !!row.mine;
   // 与 web 端列表一致：答题卡提交在列表里直接显示自动批改得分。
   out.gradeText = "";
   var grade = survey.gradeOf(opts.formDesc || "", row.desc || "");

@@ -195,6 +195,25 @@ REP="$(echo "$REP_JSON" | jq -r .id)"
 DL="$(post /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SUB\",\"match_mode\":\"All\"}")"
 assert_jq "$DL" '.datas[0].reply == ["收到，完成得不错。"]' "download 回复"
 
+echo "==> 个人查询（my-uploads / my-submissions / pending-uploads）"
+MY_UPS="$(post /api/my-uploads "{\"auth\":\"$STUDENT\"}")"
+assert_jq "$MY_UPS" ".ok == true and (.datas[] | select(.id == \"$UP\"))" "my-uploads 含个人提交"
+assert_jq "$MY_UPS" ".datas[] | select(.id == \"$UP\") | .submissionID == \"$SUB\"" "my-uploads 返回所属征集 ID"
+MY_UPS_ONE="$(post /api/my-uploads "{\"auth\":\"$STUDENT\",\"submissionID\":\"$SUB\"}")"
+assert_jq "$MY_UPS_ONE" ".ok == true and (.datas | length) == 1 and .datas[0].id == \"$UP\"" "my-uploads 按征集过滤"
+MY_SUBS="$(post /api/my-submissions "{\"auth\":\"$TEACHER\"}")"
+assert_jq "$MY_SUBS" ".ok == true and (.datas[] | select(.id == \"$SUB\" and .baseType == \"homework\"))" "my-submissions 含本人征集"
+assert_jq "$(post /api/my-submissions "{\"auth\":\"$STUDENT\"}")" ".datas | map(.id) | index(\"$SUB\") == null" "my-submissions 不含他人征集"
+# 再上传一条不回复的提交，用于验证待回复汇总（上一条已经被回复）。
+UP2_JSON="$(post /api/upload "{\"auth\":\"$STUDENT\",\"which\":\"$SUB\",\"title\":\"待回复作业\",\"desc\":\"稍后提交答案\"}")"
+assert_jq "$UP2_JSON" '.ok == true' "pending 测试上传"
+UP2="$(jq -r .id <<<"$UP2_JSON")"
+PENDING="$(post /api/pending-uploads "{\"auth\":\"$TEACHER\"}")"
+assert_jq "$PENDING" ".ok == true and (.datas[] | select(.id == \"$UP2\" and .mine == true))" "pending-uploads 本人征集的待回复提交优先且带 mine"
+assert_eq "$(http_code /api/pending-uploads "{\"auth\":\"$STUDENT\"}")" "403" "学生禁止查看待回复汇总"
+assert_eq "$(http_code /api/my-uploads '{"auth":"SC-INVALID"}')" "401" "my-uploads 拒绝无效密钥"
+assert_jq "$(post /multi-api '{"apis":[{"api":"/api/my-uploads","data":{"auth":"'"$STUDENT"'"}},{"api":"/api/my-submissions","data":{"auth":"'"$TEACHER"'"}}]}')" '.ok == true and .results[0].ok == true and .results[1].ok == true' "multi-api 支持个人查询"
+
 echo "==> 学生页面（列表范围与渲染）"
 role_cookie student student123 "$STUDENT" "$TMP/stu-cookie"
 HOME_HTML="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/")"
@@ -210,6 +229,10 @@ if grep -q 'style=' <<<"$SUBS_HTML"; then fail "学生征集页存在行内样�
 role_cookie teacher teacher123 "$TEACHER" "$TMP/tea-cookie"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/")" "200" "teachers 路径别名"
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/" | grep -q "林书言" || fail "老师空间页面缺少身份信息"
+TEACHER_HOME="$(curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/")"
+grep -q '我发布的待回复提交' <<<"$TEACHER_HOME" || fail "老师首页未显示「我发布的待回复提交」"
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/uploads/?filter=mine")" "200" "老师提交页支持我的提交筛选"
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/submissions/?scope=mine")" "200" "老师征集页支持我发布的筛选"
 # 已登录时 /login 统一跳到账号中心；/ 则回到当前空间
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/login")" "303" "已登录访问登录页"
 assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' -b "$TMP/tea-cookie" "$BASE/login")" "$BASE/login/account" "登录页跳转账号中心"
@@ -326,6 +349,34 @@ if grep -q '@\[strings/' <<<"$SHEET_ANSWER_HTML"; then fail "答题卡提交详�
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/submission/$SHEET/all" | grep -q '10 / 10' \
   || fail "答题卡提交列表未显示得分"
 assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$SHEET\"}")" '.ok == true' "删除答题卡征集"
+
+echo "==> 自定义征集模式（/api/new-mode /api/all-modes）"
+MODE_NAME="maths multiple-choise homework"
+MODE_JSON="$(post /api/new-mode "{\"auth\":\"$ADMIN\",\"modeName\":\"$MODE_NAME\",\"extendModes\":[\"homework\",\"answer sheet\"]}")"
+assert_jq "$MODE_JSON" '.ok == true and .success == true and .modeName == "maths multiple-choise homework" and .baseType == "answer sheet"' "new-mode 返回基类"
+assert_eq "$(http_code /api/new-mode "{\"auth\":\"$ADMIN\",\"modeName\":\"$MODE_NAME\",\"extendModes\":[]}")" "400" "new-mode 拒绝重复模式"
+assert_eq "$(http_code /api/new-mode "{\"auth\":\"$ADMIN\",\"modeName\":\"bad extend\",\"extendModes\":[\"not-real\"]}")" "400" "new-mode 拒绝未知继承模式"
+assert_eq "$(http_code /api/new-mode "{\"auth\":\"$TEACHER\",\"modeName\":\"x\",\"extendModes\":[]}")" "403" "new-mode 仅管理员"
+MODES="$(post /api/all-modes "{\"auth\":\"$TEACHER\"}")"
+assert_jq "$MODES" ".ok == true and (.modes[] | select(.modeName == \"$MODE_NAME\" and .baseType == \"answer sheet\"))" "all-modes 含自定义模式"
+assert_jq "$MODES" '.ok == true and ([.modes[] | select(.builtin == true)] | length) >= 7' "all-modes 含内置模式"
+MODE_DESC='1 + 1 = <input id="form_q1" data-answer="2" data-score="5"/>'
+MODE_SUB_JSON="$(post /api/new-submission "$(jq -nc --arg a "$TEACHER" --arg n "自定义模式征集" --arg d "$MODE_DESC" --arg t "$MODE_NAME" \
+  '{auth:$a,name:$n,desc:$d,type:$t}')")"
+assert_jq "$MODE_SUB_JSON" '.ok == true and .baseType == "answer sheet" and .type == "maths multiple-choise homework"' "自定义模式按基类发布"
+MODE_SUB="$(jq -r .id <<<"$MODE_SUB_JSON")"
+assert_jq "$(post /api/all-submission "{\"auth\":\"$TEACHER\"}")" ".datas[] | select(.id == \"$MODE_SUB\" and .baseType == \"answer sheet\")" "all-submission 返回 baseType"
+assert_eq "$(http_code /api/upload "$(jq -nc --arg a "$STUDENT" --arg w "$MODE_SUB" '{auth:$a,which:$w,title:"bot-upload",desc:"{}"}')")" "400" "自定义答题卡模式校验必填"
+assert_jq "$(post /api/upload "$(jq -nc --arg a "$STUDENT" --arg w "$MODE_SUB" '{auth:$a,which:$w,title:"bot-upload",desc:"{\"form_q1\":\"2\"}"}')")" '.ok == true' "自定义答题卡模式允许提交"
+# 发布页应出现自定义模式选项（服务端渲染同步）
+role_cookie admin admin123 "$ADMIN" "$TMP/adm-cookie"
+NEW_PAGE="$(curl -sS -b "$TMP/adm-cookie" "$BASE/home/pc/admin/submissions/new")"
+grep -q "$MODE_NAME" <<<"$NEW_PAGE" || fail "发布页未渲染自定义征集模式"
+if grep -q '@\[strings/' <<<"$NEW_PAGE"; then fail "发布页存在未替换的字符串标签"; fi
+ADMIN_ACCOUNT="$(curl -sS -b "$TMP/adm-cookie" "$BASE/user")"
+grep -q 'id="mode-form"' <<<"$ADMIN_ACCOUNT" || fail "账号中心缺少新增征集模式表单"
+if grep -q '@\[strings/' <<<"$ADMIN_ACCOUNT"; then fail "账号中心存在未替换的字符串标签"; fi
+assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$MODE_SUB\"}")" '.ok == true' "删除自定义模式征集"
 
 echo "==> 学生 / 家长视角（前台区分，API 不变）"
 # 同一个学生身份：账号偏好设为家长视角后进入，文案区分「孩子」
@@ -472,7 +523,7 @@ if echo "$BAD_API" | jq -r .msg | grep -qP '[\x{4e00}-\x{9fff}]'; then fail "API
 
 echo "==> 学生视角（API）"
 ALL="$(post /api/all-submission "{\"auth\":\"$STUDENT\",\"match_mode\":\"All\"}")"
-assert_jq "$ALL" ".datas[] | select(.id == \"$SUB\") | .myUploadCount == 1 and .uploadCount == 1" "all-submission 学生视角"
+assert_jq "$ALL" ".datas[] | select(.id == \"$SUB\") | .myUploadCount == 2 and .uploadCount == 2" "all-submission 学生视角"
 assert_eq "$(http_code /api/download "{\"auth\":\"$STUDENT\",\"which\":\"$SUB\",\"match_mode\":\"All\"}")" "403" "学生禁止下载"
 assert_eq "$(http_code /api/new-submission "{\"auth\":\"$STUDENT\",\"name\":\"x\"}")" "403" "学生禁止发布征集"
 assert_eq "$(http_code /api/new-class "{\"auth\":\"$TEACHER\",\"desc\":\"x\"}")" "403" "老师禁止创建班级"
@@ -494,6 +545,7 @@ echo "==> 管理员删除对象"
 assert_eq "$(http_code /api/del-object "{\"id\":\"$SUB\"}")" "401" "del-object 未鉴权"
 assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$REP\"}")" '.ok == true' "删除回复"
 assert_jq "$(post /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SUB\",\"match_mode\":\"All\"}")" '.datas[0].reply | length == 0' "回复已删除"
+assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$UP2\"}")" '.ok == true' "删除待回复提交"
 assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$UP\"}")" '.ok == true' "删除提交"
 assert_jq "$(post /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SUB\",\"match_mode\":\"All\"}")" '.datas | length == 0' "提交已删除"
 assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$SUB\"}")" '.ok == true' "删除征集"

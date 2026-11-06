@@ -7,15 +7,15 @@ use axum::{
 };
 
 use crate::db;
-use crate::strings::{t};
+use crate::strings::t;
 use crate::tools::{
     clear_cookie, cookie_value, create_role_session, create_user_session, current_user,
     invalidate_auth_sessions, now_ts, role_session, url_encode, user_session_id, valid_username,
     SID_COOKIE, USID_COOKIE,
 };
 use crate::types::{
-    AppState, AuthCtx, ClaimForm, ClassForm, EnterClassForm, PasswordForm, Prefs,
-    PrefsForm, Session, UserLoginForm, UserRegisterForm,
+    AppState, AuthCtx, ClaimForm, ClassForm, EnterClassForm, PasswordForm, Prefs, PrefsForm,
+    Session, UserLoginForm, UserRegisterForm,
 };
 use crate::view::{self, Flash, LayoutCtx, StatItem};
 
@@ -63,7 +63,7 @@ fn no_store(mut res: Response) -> Response {
 fn html(s: String) -> Response {
     no_store(Html(crate::strings::apply(&s)).into_response())
 }
-/* 
+/*
 fn html_status(status: StatusCode, s: String) -> Response {
     no_store((status, Html(crate::strings::apply(&s))).into_response())
 }
@@ -330,7 +330,7 @@ async fn render_home_route(
     match segments.as_slice() {
         [] => {
             let stats = home_stats(db::home_counts(&db, &auth, now), &active_role);
-            let submissions = db::list_submissions(&db, &auth, 4);
+            let submissions = db::list_submissions(&db, &auth, 4, auth.is_staff());
             let (filter, title_key, hint_key) = match active_role.as_str() {
                 "teacher" => (Some("pending"), "home_recent_teacher", "home_pending_hint"),
                 //"admin" => (None, "home_recent_admin", "home_admin_hint"),
@@ -339,7 +339,8 @@ async fn render_home_route(
             };
             let uploads_title = t(title_key);
             let uploads_hint = t(hint_key);
-            let uploads = db::list_uploads(&db, &auth, filter, 4, false);
+            let own_first = auth.is_staff() && filter == Some("pending");
+            let uploads = db::list_uploads(&db, &auth, filter, 4, false, own_first);
             drop(db);
             let ctx = page_context(
                 &st,
@@ -361,7 +362,12 @@ async fn render_home_route(
             ))
         }
         ["submissions"] => {
-            let rows = db::list_submissions(&db, &auth, 500);
+            let mine = auth.is_staff() && q.get("scope").map(String::as_str) == Some("mine");
+            let rows = if mine {
+                db::list_my_submissions(&db, &auth, 500)
+            } else {
+                db::list_submissions(&db, &auth, 500, auth.is_staff())
+            };
             drop(db);
             let ctx = page_context(
                 &st,
@@ -369,7 +375,11 @@ async fn render_home_route(
                 &session,
                 &auth,
                 &prefs,
-                &t("page_submissions"),
+                &t(if mine {
+                    "page_submissions_mine"
+                } else {
+                    "page_submissions"
+                }),
                 "submissions",
                 flash,
             );
@@ -379,6 +389,7 @@ async fn render_home_route(
                 auth.is_staff(),
                 auth.is_admin(),
                 ctx.page_role == "parent",
+                mine,
             ))
         }
         ["submissions", "new"] => {
@@ -390,6 +401,10 @@ async fn render_home_route(
                     &t("flash_teacher_only_publish"),
                 );
             }
+            let modes = {
+                let db = st.db.lock().unwrap();
+                db::list_class_modes(&db, &auth.class_id)
+            };
             let ctx = page_context(
                 &st,
                 &headers,
@@ -400,21 +415,37 @@ async fn render_home_route(
                 "submissions_new",
                 flash,
             );
-            html(view::new_submission(&ctx))
+            html(view::new_submission(&ctx, &modes))
         }
         ["uploads"] => {
             let filter = q.get("filter").map(String::as_str).unwrap_or("all");
             let filter = if auth.is_staff() {
                 match filter {
-                    "pending" | "replied" => Some(filter),
+                    "pending" | "replied" | "mine" => Some(filter),
                     _ => None,
                 }
             } else {
                 None
             };
             let counts = db::upload_counts(&db, &auth);
-            let rows = db::list_uploads(&db, &auth, filter, 300, false);
             let staff = auth.is_staff();
+            let rows = if staff && filter == Some("mine") {
+                db::list_my_uploads(&db, &auth, None, None, 300, false)
+            } else {
+                db::list_uploads(
+                    &db,
+                    &auth,
+                    filter,
+                    300,
+                    false,
+                    staff && filter == Some("pending"),
+                )
+            };
+            let mine_count = if staff {
+                db::count_my_uploads(&db, &auth)
+            } else {
+                counts.0
+            };
             drop(db);
             let ctx = page_context(
                 &st,
@@ -432,6 +463,7 @@ async fn render_home_route(
                 staff,
                 filter.unwrap_or("all"),
                 counts,
+                mine_count,
             ))
         }
         ["submission", sub_id] => {
@@ -491,7 +523,7 @@ async fn render_home_route(
                 );
                 return html(view::notice_detail(&ctx, &sub, admin));
             }
-            let rows = db::list_uploads(&db, &auth, None, 500, false)
+            let rows = db::list_uploads(&db, &auth, None, 500, false, false)
                 .into_iter()
                 .filter(|u| u.submission_id == sub.id)
                 .collect::<Vec<_>>();

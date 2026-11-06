@@ -197,9 +197,14 @@ pub struct SubmissionRow {
     pub id: String,
     pub name: String,
     pub desc: String,
+    /// 征集类型：内置模式名或班级自定义模式名。
     pub kind: String,
+    /// 自定义模式的行为基类（`survey` / `answer sheet` / `notice` 等）。
+    /// 内置模式为空，直接使用 `kind`。
+    pub base_kind: Option<String>,
     pub deadline: Option<i64>,
     pub created_at: i64,
+    pub created_by: Option<String>,
     pub created_name: String,
     pub upload_count: i64,
     pub my_upload_count: i64,
@@ -208,24 +213,32 @@ pub struct SubmissionRow {
 }
 
 impl SubmissionRow {
+    /// 生效的行为类型：自定义模式用 `base_kind`，内置 / 旧数据用 `kind`。
+    pub fn effective_kind(&self) -> &str {
+        match &self.base_kind {
+            Some(base) if !base.trim().is_empty() => base,
+            _ => &self.kind,
+        }
+    }
+
     /// 公示版（notice）只展示详情，不开放作业提交。
     pub fn is_notice(&self) -> bool {
-        self.kind.trim().eq_ignore_ascii_case("notice")
+        self.effective_kind().trim().eq_ignore_ascii_case("notice")
     }
 
     /// 问卷模式：简介中可包含表单控件，提交时自动组装 JSON 答案。
     pub fn is_survey(&self) -> bool {
-        crate::survey::kind_mode(&self.kind) == Some(crate::survey::Mode::Survey)
+        crate::survey::kind_mode(self.effective_kind()) == Some(crate::survey::Mode::Survey)
     }
 
     /// 答题卡模式：问卷的派生模式，所有题目必填，提交时由前端自动批改。
     pub fn is_answer_sheet(&self) -> bool {
-        crate::survey::kind_mode(&self.kind) == Some(crate::survey::Mode::AnswerSheet)
+        crate::survey::kind_mode(self.effective_kind()) == Some(crate::survey::Mode::AnswerSheet)
     }
 
     /// 是否为「简介里写表单」的征集（问卷 / 答题卡）。
     pub fn is_form(&self) -> bool {
-        crate::survey::kind_mode(&self.kind).is_some()
+        crate::survey::kind_mode(self.effective_kind()).is_some()
     }
 
     /// 公示版在截止时间前置顶；未设置截止时间的公示长期有效。
@@ -239,6 +252,9 @@ pub struct UploadRow {
     pub id: String,
     pub submission_id: String,
     pub submission_name: String,
+    /// 所属征集的创建者 auth ID（用于「我发布的征集」优先排序 / 标记）。
+    pub submission_created_by: Option<String>,
+    pub submission_created_name: String,
     pub title: String,
     pub desc: String,
     pub data: Value,
@@ -250,6 +266,36 @@ pub struct UploadRow {
     pub auth_id: Option<String>,
     pub reply_count: i64,
     pub last_reply_at: Option<i64>,
+}
+
+/// 班级自定义征集模式。
+#[derive(Clone, Debug, Default)]
+pub struct ClassModeRow {
+    pub id: String,
+    pub name: String,
+    pub normalized: String,
+    pub extend_modes: Vec<String>,
+    pub base_type: String,
+    pub created_at: i64,
+    pub created_by: Option<String>,
+    pub created_name: String,
+}
+
+impl ClassModeRow {
+    pub fn to_json(&self) -> Value {
+        serde_json::json!({
+            "id": self.id,
+            "name": self.name,
+            "modeName": self.name,
+            "baseType": self.base_type,
+            "extendModes": self.extend_modes,
+            "createdAt": crate::tools::fmt_iso(self.created_at),
+            "createdBy": self.created_name,
+            "createdByID": self.created_by,
+            "normalized": self.normalized,
+            "builtin": false,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -396,10 +442,77 @@ pub struct NewSubmissionReq {
     pub name: String,
     #[serde(default)]
     pub desc: String,
-    #[serde(default, rename = "type")]
+    #[serde(default, rename = "type", alias = "mode", alias = "modeName")]
     pub kind: String,
     #[serde(default, rename = "deadLine", alias = "deadline")]
     pub deadline: Option<Value>,
+}
+
+/// `/api/new-mode`：管理员为班级新增一个自定义征集模式。
+#[derive(Deserialize)]
+pub struct NewModeReq {
+    pub auth: String,
+    #[serde(default, rename = "modeName", alias = "mode_name", alias = "name")]
+    pub mode_name: String,
+    #[serde(
+        default,
+        rename = "extendModes",
+        alias = "extend_modes",
+        alias = "extends"
+    )]
+    pub extend_modes: Vec<String>,
+}
+
+/// `/api/all-modes`：列出班级可用的征集模式（内置 + 自定义）。
+#[derive(Deserialize)]
+pub struct AllModesReq {
+    pub auth: String,
+}
+
+/// `/api/my-uploads`：查询当前身份的提交；支持按征集 / 提交 ID 过滤。
+#[derive(Deserialize)]
+pub struct MyUploadsReq {
+    pub auth: String,
+    #[serde(default, rename = "match_mode", alias = "matchMode")]
+    pub match_mode: Option<Value>,
+    #[serde(
+        default,
+        rename = "submissionID",
+        alias = "submission_id",
+        alias = "submissionId",
+        alias = "which"
+    )]
+    pub submission_id: Option<String>,
+    #[serde(
+        default,
+        rename = "uploadID",
+        alias = "upload_id",
+        alias = "uploadId",
+        alias = "id"
+    )]
+    pub upload_id: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+}
+
+/// `/api/my-submissions`：查询当前身份发布的征集。
+#[derive(Deserialize)]
+pub struct MySubmissionsReq {
+    pub auth: String,
+    #[serde(default, rename = "match_mode", alias = "matchMode")]
+    pub match_mode: Option<Value>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+}
+
+/// `/api/pending-uploads`：教职工查看待回复提交，优先自己发布的征集。
+#[derive(Deserialize)]
+pub struct PendingUploadsReq {
+    pub auth: String,
+    #[serde(default, rename = "ownOnly", alias = "own_only")]
+    pub own_only: bool,
+    #[serde(default)]
+    pub limit: Option<i64>,
 }
 
 #[derive(Deserialize)]

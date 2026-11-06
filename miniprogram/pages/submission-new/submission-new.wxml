@@ -52,8 +52,8 @@
       ></textarea>
     </view>
 
-    <view class="notice" wx:if="{{typeValue === 'survey'}}">{{s.tipSurvey}}</view>
-    <view class="notice" wx:if="{{typeValue === 'answer sheet'}}">{{s.tipAnswerSheet}}</view>
+    <view class="notice" wx:if="{{typeBase === 'survey'}}">{{s.tipSurvey}}</view>
+    <view class="notice" wx:if="{{typeBase === 'answer sheet'}}">{{s.tipAnswerSheet}}</view>
 
     <view class="btn-row">
       <view class="btn primary block" bindtap="onSubmit">{{submitting ? '…' : s.submit}}</view>
