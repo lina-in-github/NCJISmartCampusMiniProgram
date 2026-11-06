@@ -6,9 +6,9 @@
 - 数据库：SQLite，首次启动自动建表并写入演示数据
 - 需求来源：[`doc/requirements.md`](doc/requirements.md)
 - 完整 API 文档：[`doc/api.md`](doc/api.md)
-- 当前版本：**v0.1.7**（本次迭代新增个人查询、班级自定义征集模式与小程序敏感操作弹窗）— 用户登录为非对称挑战：密码只在本机通过 PBKDF2 派生 X25519 私钥，服务端仅保存公钥；`/api/login-try`、`/api/get-auths`、`/api/refresh-key`、`/api/reset-password`、`/api/register`、`/api/upgrade-pubkey`
-- 本次新增：`/api/my-uploads`、`/api/my-submissions`、`/api/pending-uploads`、`/api/new-mode`、`/api/all-modes`；老师首页 / 提交列表优先展示自己发布的征集中的待回复提交；小程序敏感操作统一为居中、不可划走的确认弹窗（显示对象信息，重置密钥时要求输入密码）
-- 历史版本：v0.1.6 学生 / 家长视角改为前台展示区分；v0.1.5 新增征集模式「答题卡」（问卷派生：`id` / `data-answer` / `data-score`、全部必填、前端自动批改）；v0.1.4 新增征集模式「问卷」（简介中的 `<input/>` / `<checkbox/>` / `<switch/>` 渲染为表单、bot 提交 JSON 答案）；v0.1.2 UI 文案集中到 `strings/zh-CN.txt`、API 文案改为英文、角色身份与账号会话隔离；v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
+- 当前版本：**v0.1.11**（本次迭代新增征集可见性类别、单独列出标签页与模式继承约束）
+- 本次新增：隐藏征集 / 仅教师征集 / 仅管理员征集 / 不显示征集 / 单独列出征集五类模式属性；`/api/all-submission` 新增 `show-hiddens`（显示隐藏）与 `category`（按单独列出类别筛选），响应新增 `tabs` 与模式 `displayName`；`/api/new-mode` 支持 `displayName`，可见性通过 `extendModes` 继承（仅抽象属性显式声明）；支持嵌套继承并拒绝菱形继承
+- 历史版本：v0.1.7 个人查询、班级自定义征集模式、小程序敏感操作弹窗；v0.1.6 学生 / 家长视角改为前台展示区分；v0.1.5 新增征集模式「答题卡」（问卷派生：`id` / `data-answer` / `data-score`、全部必填、前端自动批改）；v0.1.4 新增征集模式「问卷」（简介中的 `<input/>` / `<checkbox/>` / `<switch/>` 渲染为表单、bot 提交 JSON 答案）；v0.1.2 UI 文案集中到 `strings/zh-CN.txt`、API 文案改为英文、角色身份与账号会话隔离；v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
 
 ---
 
@@ -121,7 +121,7 @@ SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
 | `/login/account` | 账号登录 / 注册页（非对称挑战）；已有账号会话时跳转 `/user` |
 | `/home` | 跳转到当前身份的空间 |
 | `/home/<mob\|pc>/<parent\|student\|teacher\|admin>/` | 首页（卡片：最近征集、最近/待回复提交、账号入口） |
-| `…/submissions/` | 所有征集；老师/管理员可发布 |
+| `…/submissions/` | 所有征集；老师/管理员可发布；头部含「单独列出」类别标签页与「显示隐藏」开关（`?show-hiddens=1`、`?tab=<模式名>`） |
 | `…/submissions/new` | 发布征集（老师/管理员） |
 | `…/uploads/` | 学生：自己的提交；老师/管理员：全班提交，可筛选待回复/已回复 |
 | `…/submission/<id>/` | 有提交则跳转最后一条本站提交，否则跳上传表单；公示版（notice）跳转详情页 |
@@ -150,12 +150,12 @@ SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
 | `/api/upload` | 任意身份 | 上传提交（标题、说明、base64 附件）；公示版（notice）返回 403 |
 | `/api/download` | 老师 / 管理员 | 按条件下载/查看某征集的提交与回复 |
 | `/api/new-submission` | 老师 / 管理员 | 发布征集 |
-| `/api/all-submission` | 任意身份 | 学生：本人视角；老师/管理员：全班视角 |
+| `/api/all-submission` | 任意身份 | 学生：本人视角；老师/管理员：全班视角；支持 `show-hiddens` / `category`，返回 `tabs` 与模式 `displayName` |
 | `/api/my-uploads` | 任意身份 | 查询当前身份的全部提交（可按征集 / 提交 ID 过滤） |
 | `/api/my-submissions` | 任意身份 | 查询当前身份发布的所有征集 |
 | `/api/pending-uploads` | 老师 / 管理员 | 待回复提交，自己发布的征集优先（`ownOnly` 可只看自己的） |
-| `/api/new-mode` | 管理员 | 为班级新增自定义征集模式（继承内置 / 已有模式的行为） |
-| `/api/all-modes` | 任意身份 | 列出班级可用的征集模式（内置 + 自定义） |
+| `/api/new-mode` | 管理员 | 为班级新增自定义征集模式（继承 + 显示名称；可见性通过 `extendModes` 定义；拒绝菱形继承） |
+| `/api/all-modes` | 任意身份 | 列出班级可用的征集模式（内置 + 自定义，含 `displayName` / 可见性 / 单独列出） |
 | `/api/reply` | 老师 / 管理员 | 回复一条提交 |
 | `/api/new-class` | 管理员 | 创建班级（自动生成一个绑定到当前用户的管理员密钥） |
 | `/api/new-user` | 管理员 | 在本班批量生成成员密钥 |
@@ -418,16 +418,46 @@ API 不使用该字符串库：API 的错误与成功消息统一为英文。
 - **API 不变**：`/api/*` 只认 `auth` 与其中的 `role`，没有也没有引入任何「家长」参数；
   同一份数据、同一套权限。
 
+### 4.15 征集可见性类别与单独列出（本次新增）
+
+征集模式新增五类可见性 / 列表属性，既能直接作为 `/api/new-submission` 的 `type`，
+也能被班级自定义模式继承：
+
+| 属性 | 内置模式名 | 行为 |
+| --- | --- | --- |
+| 隐藏征集 | `hidden` | 默认不出现在 `/api/all-submission`；`show-hiddens: true`（或 `showHiddens` / `show_hiddens`）时出现 |
+| 仅教师征集 | `teacher only` | 学生不可见；教师与管理员可见 |
+| 仅管理员征集 | `admin only` | 只有管理员可见；教师直接按 ID 访问也返回 404 |
+| 不显示征集 | `invisible` | 永不进入全部征集列表，`show-hiddens` 也不显示；只能按征集 ID 调用 API / 直接打开页面 |
+| 单独列出征集 | `separate list` | 抽象类别，不能直接发布，只能被继承；子类别会出现在征集列表头部标签页 |
+
+- **可见性通过继承定义**：`/api/new-mode` 的 `hidden` / `teacherOnly` / `adminOnly` /
+  `invisible` / `separateList` 字段已不再生效，必须把对应内置模式写进 `extendModes`
+  （例如 `["homework", "hidden", "separate list"]`）。只有 `abstract` 例外：抽象属性不继承，
+  需要在创建模式时显式声明。
+- 可见性直接按 ID 访问的规则：`teacher only` / `admin only` 会拦截无权角色；
+  `hidden` / `invisible` 只影响列表，按 ID 访问仍然可用（需求中的「只能通过 api 直接按照征集id调用」）。
+- 单条征集也可以通过 `/api/new-submission` 的 `hidden` / `teacherOnly` / `adminOnly` / `invisible`
+  覆盖可见性，最终属性 = 模式属性 ∪ 单条覆盖属性。
+- `/api/all-submission` 的 `tabs` 返回所有继承 `separate list` 的具体类别（不含抽象基类自身）：
+  `{id, name, displayName, count, separateList}`；`category` 可传模式名或中文显示名称，
+  返回该类别及其子类别下的征集。
+- 内置模式的 `displayName` 由 `strings/zh-CN.txt` 本地化（例如「隐藏征集」）；
+  班级自定义模式在 `/api/new-mode` 里可传 `displayName`，中文标签页名称同样可用。
+- 嵌套继承允许 `A -> B -> C`；任意两个父模式的继承链（含父模式自身）有交集时视为菱形继承，
+  `/api/new-mode` 返回 400 并说明冲突祖先。抽象属性不向下继承，因此 `separate list` 的子类别
+  仍然可以直接发布。
+
 ---
 
 ## 5. 界面
 
 - **登录**：品牌页 + 用户名/密码（密码在浏览器内派生 X25519 密钥，不上传）+ 注册并绑定班级密钥 + 手机/电脑视图切换。
 - **首页**：按角色生成欢迎区、统计卡片、最近征集、待回复/最近提交。
-- **征集**：卡片式列表、类型与截止状态标签、发布表单。
+- **征集**：卡片式列表、类型与截止状态标签、发布表单；列表头部有「单独列出」类别标签页与「显示隐藏」开关，卡片会标记隐藏 / 仅教师 / 仅管理员 / 不显示 / 单独列出。
 - **提交**：拖拽上传、多个附件、图片缩略图、base64 编码由浏览器完成。
 - **详情**：图片灯箱、附件下载、回复时间线、快捷回复、管理员删除。
-- **问卷**：简介中的输入框 / 复选框 / 开关渲染为扁平控件（开关为自绘滑块），末尾一键提交，答案自动整理成键值列表。
+- **问卷**：简介中的输入框 / 复选框 / 开关渲染为扁平控件（开关以勾选框呈现），末尾一键提交，答案自动整理成键值列表。
 - **答题卡**：全部必答，提交后由浏览器自动批改，详情页显示得分卡（总分、答对题数、逐题正误与错题答案），列表显示得分标签。
 - **视角**：学生身份在顶栏一键切换「学生视角 / 家长视角」，只用词不同、数据相同。
 - **账号中心**：深/浅/跟随系统主题、默认视图、学生身份显示模式（学生 / 家长视角）、显示名称、密码、多身份密钥（显示/复制/改名/轮换/进入/删除）、创建班级、生成成员密钥。
@@ -460,6 +490,8 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 未全部作答返回 400、`__grade` 批改结果追加在 `desc` 末尾、详情页与列表显示得分。
 
 本次迭代的冒烟测试新增覆盖：`/api/my-uploads`（含按征集 / 提交 ID 过滤）、`/api/my-submissions`、`/api/pending-uploads`（`mine` 标记与个人发布优先）、`/api/new-mode`（成功 / 重复 / 未知继承 / 非管理员）、`/api/all-modes`、自定义答题卡模式的发布与提交校验、发布页自定义模式渲染、账号中心新增模式表单，以及老师首页「我发布的待回复提交」与 Web 列表筛选。
+
+v0.1.10 / v0.1.11 的冒烟测试新增覆盖：单独列出类别 + 中文 `displayName`、嵌套继承、菱形继承拒绝、抽象类别拒绝直接发布、隐藏 / 仅教师 / 仅管理员 / 不显示四类可见性、`show-hiddens`、单条征集可见性覆盖、`/api/all-submission` 的 `tabs` 与中文 `category` 筛选、按 ID 读取不显示征集、Web 列表标签页与显示隐藏开关。
 
 问卷模式在冒烟测试中覆盖：发布问卷、详情页/上传页渲染控件、必填项缺失返回 400、`bot-upload` 答案经 `/api/download` 原样返回、提交详情按题目展示答案、仍允许非 JSON 说明的 API 提交。
 

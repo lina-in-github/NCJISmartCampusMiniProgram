@@ -858,7 +858,7 @@ function hasReply(db, uploadId) {
 
 var NOTICE_RE = /^\s*notice\s*$/i;
 
-var BUILTIN_MODES = [
+var BUILTIN_BEHAVIOR_MODES = [
   "homework",
   "open call",
   "leave request",
@@ -867,6 +867,16 @@ var BUILTIN_MODES = [
   "notice",
   "other",
 ];
+
+var BUILTIN_TRAIT_MODES = [
+  "hidden",
+  "teacher only",
+  "admin only",
+  "invisible",
+  "separate list",
+];
+
+var BUILTIN_MODES = BUILTIN_BEHAVIOR_MODES.concat(BUILTIN_TRAIT_MODES);
 
 function normalizeModeName(raw) {
   return String(raw === null || raw === undefined ? "" : raw)
@@ -888,7 +898,76 @@ function builtinMode(normalized) {
   }
   if (normalized === "notice") return "notice";
   if (normalized === "other") return "other";
+  if (normalized === "hidden" || normalized === "hidden submission" || normalized === "hide" ||
+      normalized === "隐藏" || normalized === "隐藏征集") return "hidden";
+  if (normalized === "teacher only" || normalized === "teachers only" || normalized === "teacher" ||
+      normalized === "仅教师" || normalized === "仅教师征集") return "teacher only";
+  if (normalized === "admin only" || normalized === "admins only" ||
+      normalized === "administrator only" || normalized === "仅管理员" ||
+      normalized === "仅管理员征集") return "admin only";
+  if (normalized === "invisible" || normalized === "not listed" || normalized === "not shown" ||
+      normalized === "不显示" || normalized === "不显示征集") return "invisible";
+  if (normalized === "separate list" || normalized === "separate lists" ||
+      normalized === "listed separately" || normalized === "list separately" ||
+      normalized === "separately listed" || normalized === "单独列出" ||
+      normalized === "单独列出征集") return "separate list";
   return null;
+}
+
+function defaultModeFlags() {
+  return {
+    hidden: false,
+    teacherOnly: false,
+    adminOnly: false,
+    invisible: false,
+    separateList: false,
+    abstract: false,
+  };
+}
+
+function builtinModeFlags(canonical) {
+  var flags = defaultModeFlags();
+  if (canonical === "hidden") flags.hidden = true;
+  else if (canonical === "teacher only") flags.teacherOnly = true;
+  else if (canonical === "admin only") flags.adminOnly = true;
+  else if (canonical === "invisible") flags.invisible = true;
+  else if (canonical === "separate list") {
+    flags.separateList = true;
+    flags.abstract = true;
+  }
+  return flags;
+}
+
+function builtinModeDisplayName(canonical) {
+  var key = {
+    "homework": "type_homework",
+    "open call": "type_open_call",
+    "leave request": "type_leave_request",
+    "survey": "type_survey",
+    "answer sheet": "type_answer_sheet",
+    "notice": "type_notice",
+    "other": "type_other",
+    "hidden": "type_hidden",
+    "teacher only": "type_teacher_only",
+    "admin only": "type_admin_only",
+    "invisible": "type_invisible",
+    "separate list": "type_separate_list",
+  }[canonical];
+  return key ? strings.t(key) : strings.t("type_generic");
+}
+
+function builtinModeInfo(canonical) {
+  return {
+    id: "builtin_" + canonical.replace(/ /g, "_"),
+    name: canonical,
+    normalized: canonical,
+    displayName: builtinModeDisplayName(canonical),
+    baseType: BUILTIN_BEHAVIOR_MODES.indexOf(canonical) >= 0 ? canonical : "other",
+    extendModes: [],
+    inheritModes: [canonical],
+    flags: builtinModeFlags(canonical),
+    builtin: true,
+  };
 }
 
 function classModesOf(db, classId) {
@@ -897,31 +976,140 @@ function classModesOf(db, classId) {
   });
 }
 
-function findMode(db, classId, raw) {
+function flagsOfModeRow(row) {
+  if (row.flags) return row.flags;
+  return {
+    hidden: !!row.hidden,
+    teacherOnly: !!(row.teacher_only || row.teacherOnly),
+    adminOnly: !!(row.admin_only || row.adminOnly),
+    invisible: !!row.invisible,
+    separateList: !!(row.separate_list || row.separateList),
+    abstract: !!(row.abstract_mode || row.abstract),
+  };
+}
+
+function mergeFlags(target, parent) {
+  target.hidden = target.hidden || parent.hidden;
+  target.teacherOnly = target.teacherOnly || parent.teacherOnly;
+  target.adminOnly = target.adminOnly || parent.adminOnly;
+  target.invisible = target.invisible || parent.invisible;
+  target.separateList = target.separateList || parent.separateList;
+  return target;
+}
+
+function findMode(db, classId, raw, visiting) {
   var normalized = normalizeModeName(raw);
   if (!normalized) return null;
   var builtin = builtinMode(normalized);
-  if (builtin) {
-    return {
-      name: builtin,
-      normalized: builtin,
-      baseType: builtin,
-      extendModes: [],
-      builtin: true,
-    };
-  }
+  if (builtin) return builtinModeInfo(builtin);
+  var seen = visiting || [];
+  if (seen.indexOf(normalized) >= 0) return null;
   var found = null;
   classModesOf(db, classId).forEach(function (m) {
     if (m.normalized === normalized) found = m;
   });
   if (!found) return null;
+  var flags = flagsOfModeRow(found);
+  var extend = found.extend_modes || [];
+  var ancestors = [normalized];
+  var nextSeen = seen.concat([normalized]);
+  extend.forEach(function (parent) {
+    var info = findMode(db, classId, parent, nextSeen);
+    if (!info) return;
+    mergeFlags(flags, info.flags);
+    (info.inheritModes || info.ancestors || [info.normalized]).forEach(function (a) {
+      if (ancestors.indexOf(a) < 0) ancestors.push(a);
+    });
+  });
   return {
+    id: found.id,
     name: found.name,
     normalized: found.normalized,
-    baseType: found.base_type || "other",
-    extendModes: found.extend_modes || [],
+    displayName: found.display_name || found.displayName || found.name,
+    baseType: found.base_type || found.baseType || "other",
+    extendModes: extend,
+    inheritModes: ancestors,
+    ancestors: ancestors,
+    flags: flags,
     builtin: false,
+    createdAt: found.created_at ? time.fmtISO(found.created_at) : "",
+    createdBy: found.created_name || "",
   };
+}
+
+function listAllModes(db, classId) {
+  var out = BUILTIN_MODES.map(function (name) {
+    return builtinModeInfo(name);
+  });
+  classModesOf(db, classId).forEach(function (row) {
+    var info = findMode(db, classId, row.normalized);
+    if (info) out.push(info);
+  });
+  return out;
+}
+
+function modeInfoJson(info) {
+  return {
+    id: info.builtin ? info.id : info.id || info.normalized,
+    name: info.name,
+    modeName: info.name,
+    displayName: info.displayName || info.name,
+    normalized: info.normalized,
+    baseType: info.baseType,
+    extendModes: info.extendModes || [],
+    inheritModes: info.inheritModes || info.ancestors || [info.normalized],
+    builtin: !!info.builtin,
+    hidden: !!info.flags.hidden,
+    teacherOnly: !!info.flags.teacherOnly,
+    adminOnly: !!info.flags.adminOnly,
+    invisible: !!info.flags.invisible,
+    separateList: !!info.flags.separateList,
+    abstract: !!info.flags.abstract,
+    flags: info.flags,
+    visibility: info.flags.adminOnly
+      ? "admin_only"
+      : info.flags.teacherOnly
+      ? "teacher_only"
+      : info.flags.invisible
+      ? "invisible"
+      : info.flags.hidden
+      ? "hidden"
+      : "normal",
+    createdAt: info.createdAt || "",
+    createdBy: info.createdBy || "",
+  };
+}
+
+function modeCanView(flags, role) {
+  if (flags.adminOnly) return role === "admin";
+  if (flags.teacherOnly) return role === "teacher" || role === "admin";
+  return true;
+}
+
+function modeListed(flags, role, showHiddens) {
+  return modeCanView(flags, role) && !flags.invisible && (!flags.hidden || showHiddens);
+}
+function flagsOfSubmission(db, classId, sub) {
+  var info = findMode(db, classId, sub.type);
+  var modeFlags = info ? info.flags : defaultModeFlags();
+  return {
+    hidden: !!modeFlags.hidden || !!sub.hidden,
+    teacherOnly: !!modeFlags.teacherOnly || !!sub.teacher_only || !!sub.teacherOnly,
+    adminOnly: !!modeFlags.adminOnly || !!sub.admin_only || !!sub.adminOnly,
+    invisible: !!modeFlags.invisible || !!sub.invisible,
+    separateList: !!modeFlags.separateList || !!sub.separate_list || !!sub.separateList,
+    abstract: !!modeFlags.abstract,
+  };
+}
+
+
+function truthy(value) {
+  if (value === true) return true;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    return /^(1|true|yes|on|show)$/i.test(value.trim());
+  }
+  return false;
 }
 
 function effectiveKind(sub) {
@@ -970,13 +1158,33 @@ function submissionRow(db, auth, sub, now) {
     return !hasReply(db, u.id);
   });
   var sorted = sortUploadsNewestFirst(own);
+  var mode = findMode(db, auth.class_id, sub.type);
+  var flags = mode ? mode.flags : defaultModeFlags();
+  flags = {
+    hidden: !!flags.hidden || !!sub.hidden,
+    teacherOnly: !!flags.teacherOnly || !!sub.teacher_only || !!sub.teacherOnly,
+    adminOnly: !!flags.adminOnly || !!sub.admin_only || !!sub.adminOnly,
+    invisible: !!flags.invisible || !!sub.invisible,
+    separateList: !!flags.separateList || !!sub.separate_list || !!sub.separateList,
+    abstract: !!flags.abstract,
+  };
   return {
     id: sub.id,
     name: sub.name,
     desc: sub.desc,
     deadLine: sub.deadline === null ? null : time.fmtISO(sub.deadline),
     type: sub.type,
+    displayName: mode ? mode.displayName : sub.type,
+    typeDisplayName: mode ? mode.displayName : sub.type,
     baseType: effectiveKind(sub),
+    hidden: !!flags.hidden,
+    teacherOnly: !!flags.teacherOnly,
+    adminOnly: !!flags.adminOnly,
+    invisible: !!flags.invisible,
+    separateList: !!flags.separateList,
+    abstract: !!flags.abstract,
+    flags: flags,
+    inheritModes: mode ? mode.inheritModes : [normalizeModeName(sub.type)],
     createdAt: time.fmtISO(sub.created_at),
     createdBy: sub.created_name,
     createdByID: sub.created_by || null,
@@ -1231,7 +1439,93 @@ function allSubmission(db, body) {
   if (!parsed.ok) return fail(400, parsed.msg);
 
   var now = time.now();
-  var rows = sortSubmissions(submissionsOf(db, auth.class_id), now).map(function (sub) {
+  var showHiddens = truthy(
+    body["show-hiddens"] !== undefined
+      ? body["show-hiddens"]
+      : body.showHiddens !== undefined
+      ? body.showHiddens
+      : body.show_hiddens
+  );
+  var category = String(
+    body.category !== undefined
+      ? body.category
+      : body.tab !== undefined
+      ? body.tab
+      : body.separateList !== undefined
+      ? body.separateList
+      : ""
+  ).trim();
+
+  var directId = String(
+    body.submissionID !== undefined
+      ? body.submissionID
+      : body.submission_id !== undefined
+      ? body.submission_id
+      : body.submissionId !== undefined
+      ? body.submissionId
+      : body.which !== undefined
+      ? body.which
+      : body.id !== undefined
+      ? body.id
+      : ""
+  ).trim();
+  if (directId) {
+    var directSub = null;
+    submissionsOf(db, auth.class_id).forEach(function (sub) {
+      if (sub.id === directId) directSub = sub;
+    });
+    if (!directSub) return fail(404, "submission not found");
+    if (!modeCanView(flagsOfSubmission(db, auth.class_id, directSub), auth.role)) {
+      return fail(404, "submission not found");
+    }
+    var directRow = submissionRow(db, auth, directSub, now);
+    return ok({
+      datas: [directRow],
+      tabs: [],
+      separateLists: [],
+      showHiddens: showHiddens,
+      category: category,
+      direct: true,
+    });
+  }
+
+  // 可见性过滤 + 单独列出标签页。
+  var visibleSubs = submissionsOf(db, auth.class_id).filter(function (sub) {
+    return modeListed(flagsOfSubmission(db, auth.class_id, sub), auth.role, showHiddens);
+  });
+  var tabs = [];
+  listAllModes(db, auth.class_id).forEach(function (info) {
+    if (!info.flags.separateList || info.flags.abstract) return;
+    if (!modeCanView(info.flags, auth.role)) return;
+    var count = visibleSubs.filter(function (sub) {
+      var subInfo = findMode(db, auth.class_id, sub.type);
+      return subInfo && subInfo.inheritModes.indexOf(info.normalized) >= 0;
+    }).length;
+    tabs.push({
+      id: info.id,
+      name: info.name,
+      modeName: info.name,
+      displayName: info.displayName,
+      normalized: info.normalized,
+      count: count,
+      separateList: true,
+    });
+  });
+  tabs.sort(function (a, b) {
+    return String(a.displayName).localeCompare(String(b.displayName));
+  });
+  if (category) {
+    var categoryInfo = findMode(db, auth.class_id, category);
+    var categoryNorm = categoryInfo ? categoryInfo.normalized : normalizeModeName(category);
+    visibleSubs = visibleSubs.filter(function (sub) {
+      var info = findMode(db, auth.class_id, sub.type);
+      return (
+        normalizeModeName(sub.type) === categoryNorm ||
+        (info && info.inheritModes.indexOf(categoryNorm) >= 0)
+      );
+    });
+  }
+  var rows = sortSubmissions(visibleSubs, now).map(function (sub) {
     return submissionRow(db, auth, sub, now);
   });
 
@@ -1262,7 +1556,13 @@ function allSubmission(db, body) {
     if (!picked.ok) return fail(400, picked.msg);
     rows = picked.rows;
   }
-  return ok({ datas: rows });
+  return ok({
+    datas: rows,
+    tabs: tabs,
+    separateLists: tabs,
+    showHiddens: showHiddens,
+    category: category,
+  });
 }
 
 function applyUploadMatch(db, rows, body) {
@@ -1410,29 +1710,11 @@ function allModes(db, body) {
   var ctx = requireAuth(db, body);
   if (ctx.error) return ctx.error;
   var auth = ctx.auth;
-  var modes = BUILTIN_MODES.map(function (name) {
-    return {
-      id: "builtin_" + name.replace(/ /g, "_"),
-      name: name,
-      modeName: name,
-      baseType: name,
-      extendModes: [],
-      builtin: true,
-    };
+  var modes = listAllModes(db, auth.class_id).map(modeInfoJson);
+  var tabs = modes.filter(function (m) {
+    return m.separateList && !m.abstract;
   });
-  classModesOf(db, auth.class_id).forEach(function (m) {
-    modes.push({
-      id: m.id,
-      name: m.name,
-      modeName: m.name,
-      baseType: m.base_type || "other",
-      extendModes: m.extend_modes || [],
-      createdAt: time.fmtISO(m.created_at),
-      createdBy: m.created_name || "",
-      builtin: false,
-    });
-  });
-  return ok({ modes: modes, datas: modes });
+  return ok({ modes: modes, datas: modes, tabs: tabs, separateLists: tabs });
 }
 
 /** `/api/new-mode`：管理员新增班级征集模式。 */
@@ -1455,11 +1737,25 @@ function newMode(db, body) {
   if (findMode(db, auth.class_id, normalized)) {
     return fail(400, "submission mode already exists: " + name);
   }
+  var displayName = stringField(
+    body,
+    ["displayName", "display_name", "label"],
+    name
+  );
+  if (!displayName.ok) return displayName.error;
+  displayName = displayName.value.trim() || name;
+  if (charCount(displayName) > 60) {
+    return fail(400, "displayName is too long (max 60 characters)");
+  }
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(displayName)) {
+    return fail(400, "displayName must not contain control characters");
+  }
   var extendsRaw = body.extendModes !== undefined ? body.extendModes : body.extend_modes;
   if (!Array.isArray(extendsRaw)) extendsRaw = [];
   if (extendsRaw.length > 16) return fail(400, "extendModes supports at most 16 entries");
   var extendModes = [];
   var bases = [];
+  var parents = [];
   for (var i = 0; i < extendsRaw.length; i++) {
     var raw = String(extendsRaw[i] === null || extendsRaw[i] === undefined ? "" : extendsRaw[i]).trim();
     if (!raw) continue;
@@ -1468,6 +1764,30 @@ function newMode(db, body) {
     if (extendModes.indexOf(mode.normalized) >= 0) continue;
     extendModes.push(mode.normalized);
     bases.push(mode.baseType);
+    parents.push(mode);
+  }
+  for (var a = 0; a < parents.length; a++) {
+    for (var b = a + 1; b < parents.length; b++) {
+      var common = null;
+      for (var x = 0; x < parents[a].inheritModes.length; x++) {
+        if (parents[b].inheritModes.indexOf(parents[a].inheritModes[x]) >= 0) {
+          common = parents[a].inheritModes[x];
+          break;
+        }
+      }
+      if (common) {
+        return fail(
+          400,
+          "diamond inheritance is not allowed: '" +
+            parents[a].name +
+            "' and '" +
+            parents[b].name +
+            "' both inherit '" +
+            common +
+            "'"
+        );
+      }
+    }
   }
   var baseType = "other";
   ["answer sheet", "survey", "notice", "homework", "open call", "leave request", "other"].forEach(
@@ -1475,13 +1795,32 @@ function newMode(db, body) {
       if (baseType === "other" && bases.indexOf(candidate) >= 0) baseType = candidate;
     }
   );
+  // 可见性只来自继承（extendModes）；只有抽象属性需要显式声明。
+  var flags = defaultModeFlags();
+  parents.forEach(function (parent) {
+    flags.hidden = flags.hidden || !!parent.flags.hidden;
+    flags.teacherOnly = flags.teacherOnly || !!parent.flags.teacherOnly;
+    flags.adminOnly = flags.adminOnly || !!parent.flags.adminOnly;
+    flags.invisible = flags.invisible || !!parent.flags.invisible;
+    flags.separateList = flags.separateList || !!parent.flags.separateList;
+  });
+  flags.abstract =
+    body.abstract === true || body.abstractMode === true || body.abstract_mode === true;
   var modeRow = {
     id: newId("mode"),
     class_id: auth.class_id,
     name: name,
     normalized: normalized,
+    display_name: displayName,
     extend_modes: extendModes,
     base_type: baseType,
+    hidden: flags.hidden,
+    teacher_only: flags.teacherOnly,
+    admin_only: flags.adminOnly,
+    invisible: flags.invisible,
+    separate_list: flags.separateList,
+    abstract_mode: flags.abstract,
+    flags: flags,
     created_at: time.now(),
     created_by: auth.id,
     created_name: identity(auth),
@@ -1491,8 +1830,16 @@ function newMode(db, body) {
     success: true,
     id: modeRow.id,
     modeName: modeRow.name,
+    displayName: modeRow.display_name,
     extendModes: extendModes,
     baseType: baseType,
+    hidden: flags.hidden,
+    teacherOnly: flags.teacherOnly,
+    adminOnly: flags.adminOnly,
+    invisible: flags.invisible,
+    separateList: flags.separateList,
+    abstract: flags.abstract,
+    flags: flags,
     createdAt: time.fmtISO(modeRow.created_at),
     createdBy: modeRow.created_name,
   });
@@ -1529,12 +1876,30 @@ function newSubmission(db, body) {
   if (!deadline.ok) return fail(400, deadline.msg);
 
   var mode = findMode(db, auth.class_id, kind);
+  if (mode && mode.flags.abstract) {
+    return fail(
+      400,
+      "submission mode is abstract and cannot be used directly: " + mode.name
+    );
+  }
+  if (mode && mode.flags.adminOnly && auth.role !== "admin") {
+    return fail(403, "submission mode requires a different role: " + mode.name);
+  }
+  if ((body.adminOnly === true || body.admin_only === true) && auth.role !== "admin") {
+    return fail(403, "admin-only submissions can only be published by admins");
+  }
   var baseKind = mode ? mode.baseType : "other";
   if (mode) kind = mode.name;
   var definitionError = survey.validateDefinition(baseKind, desc);
   if (definitionError) return fail(400, definitionError);
 
   var id = newId("sub");
+  var subFlags = {
+    hidden: body.hidden === true || (mode && mode.flags.hidden) || false,
+    teacher_only: body.teacherOnly === true || body.teacher_only === true || (mode && mode.flags.teacherOnly) || false,
+    admin_only: body.adminOnly === true || body.admin_only === true || (mode && mode.flags.adminOnly) || false,
+    invisible: body.invisible === true || body.notListed === true || (mode && mode.flags.invisible) || false,
+  };
   db.submissions.push({
     id: id,
     class_id: auth.class_id,
@@ -1542,12 +1907,24 @@ function newSubmission(db, body) {
     desc: desc,
     type: kind,
     base_type: baseKind,
+    hidden: subFlags.hidden,
+    teacher_only: subFlags.teacher_only,
+    admin_only: subFlags.admin_only,
+    invisible: subFlags.invisible,
     deadline: deadline.value,
     created_at: time.now(),
     created_by: auth.id,
     created_name: identity(auth),
   });
-  return ok({ id: id, type: kind, baseType: baseKind });
+  return ok({
+    id: id,
+    type: kind,
+    baseType: baseKind,
+    hidden: subFlags.hidden,
+    teacherOnly: subFlags.teacher_only,
+    adminOnly: subFlags.admin_only,
+    invisible: subFlags.invisible,
+  });
 }
 
 function reply(db, body) {

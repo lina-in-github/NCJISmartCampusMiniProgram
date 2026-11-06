@@ -24,10 +24,29 @@
         <label class="label" for="mode-name">@[strings/account_mode_name]</label>
         <input class="input" id="mode-name" type="text" maxlength="60" required placeholder="@[strings/account_mode_name_placeholder]">
       </div>
+      <div class="field">
+        <label class="label" for="mode-display-name">@[strings/account_mode_display_name]</label>
+        <input class="input" id="mode-display-name" type="text" maxlength="60" placeholder="@[strings/account_mode_display_name_placeholder]">
+      </div>
       <div class="field full">
         <label class="label" for="mode-extends">@[strings/account_mode_extends]</label>
         <input class="input" id="mode-extends" type="text" maxlength="400" placeholder="@[strings/account_mode_extends_placeholder]">
         <span class="hint">@[strings/account_mode_extends_hint]</span>
+      </div>
+      <div class="field full">
+        <span class="label">@[strings/account_mode_inherit_visibility]</span>
+        <div class="check-row" id="mode-visibility-extends">
+          <label class="check"><input type="checkbox" data-extend-mode="hidden"> @[strings/account_mode_flag_hidden]</label>
+          <label class="check"><input type="checkbox" data-extend-mode="teacher only"> @[strings/account_mode_flag_teacher_only]</label>
+          <label class="check"><input type="checkbox" data-extend-mode="admin only"> @[strings/account_mode_flag_admin_only]</label>
+          <label class="check"><input type="checkbox" data-extend-mode="invisible"> @[strings/account_mode_flag_invisible]</label>
+          <label class="check"><input type="checkbox" data-extend-mode="separate list"> @[strings/account_mode_flag_separate]</label>
+        </div>
+        <span class="hint">@[strings/account_mode_visibility_inherit_hint]</span>
+      </div>
+      <div class="field full">
+        <label class="check"><input type="checkbox" id="mode-abstract"> @[strings/account_mode_flag_abstract]</label>
+        <span class="hint">@[strings/account_mode_abstract_hint]</span>
       </div>
     </div>
     <div><button class="btn outline" type="submit">{plus}@[strings/account_mode_create]</button></div>

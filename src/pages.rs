@@ -48,6 +48,18 @@ fn flash_from(q: &HashMap<String, String>) -> Flash {
     Flash::from_map(q)
 }
 
+/// 解析页面查询中的布尔开关（`?show-hiddens=1` / `true` / `on`）。
+fn query_flag(q: &HashMap<String, String>, keys: &[&str]) -> bool {
+    keys.iter().any(|key| {
+        q.get(*key).is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on" | "show"
+            )
+        })
+    })
+}
+
 fn no_store(mut res: Response) -> Response {
     res.headers_mut().insert(
         header::CACHE_CONTROL,
@@ -363,11 +375,24 @@ async fn render_home_route(
         }
         ["submissions"] => {
             let mine = auth.is_staff() && q.get("scope").map(String::as_str) == Some("mine");
-            let rows = if mine {
+            let show_hiddens = query_flag(
+                &q,
+                &["show-hiddens", "showHiddens", "show_hiddens", "hiddens"],
+            );
+            let active_tab = q
+                .get("tab")
+                .or_else(|| q.get("category"))
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let mut rows = if mine {
                 db::list_my_submissions(&db, &auth, 500)
             } else {
-                db::list_submissions(&db, &auth, 500, auth.is_staff())
+                db::list_submissions_visible(&db, &auth, 500, auth.is_staff(), show_hiddens)
             };
+            let tabs = db::separate_mode_tabs(&db, &auth.class_id, &rows, &auth.role);
+            if let Some(tab) = active_tab.as_deref() {
+                db::filter_submissions_category(&db, &auth.class_id, &mut rows, tab);
+            }
             drop(db);
             let ctx = page_context(
                 &st,
@@ -386,6 +411,9 @@ async fn render_home_route(
             html(view::submissions(
                 &ctx,
                 &rows,
+                &tabs,
+                active_tab.as_deref(),
+                show_hiddens,
                 auth.is_staff(),
                 auth.is_admin(),
                 ctx.page_role == "parent",

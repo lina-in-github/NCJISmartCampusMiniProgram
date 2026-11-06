@@ -991,6 +991,7 @@
       var adminSelect = $("#mode-admin");
       var option = adminSelect && adminSelect.options[adminSelect.selectedIndex];
       var name = ($("#mode-name").value || "").trim();
+      var displayName = ($("#mode-display-name").value || "").trim();
       var extendRaw = ($("#mode-extends").value || "").trim();
       var result = $("#mode-result");
       if (!option) {
@@ -1009,12 +1010,19 @@
             })
             .filter(Boolean)
         : [];
+      // 可见性选择也写入 extendModes（继承内置模式），不再单独提交可见性字段。
+      $$("#mode-visibility-extends input[data-extend-mode]:checked").forEach(function (input) {
+        var value = input.getAttribute("data-extend-mode");
+        if (value && extendModes.indexOf(value) < 0) extendModes.push(value);
+      });
       setLoading(btn, true, S("toast_saving"));
       try {
         var data = await api("/api/new-mode", {
           auth: option.value,
           modeName: name,
-          extendModes: extendModes
+          displayName: displayName || name,
+          extendModes: extendModes,
+          abstract: $("#mode-abstract").checked
         });
         if (result) {
           result.hidden = false;
@@ -1026,7 +1034,13 @@
         }
         toast(S("account_mode_created_toast", data.modeName || name), "ok");
         $("#mode-name").value = "";
+        $("#mode-display-name").value = "";
         $("#mode-extends").value = "";
+        $$("#mode-visibility-extends input[data-extend-mode]:checked").forEach(function (input) {
+          input.checked = false;
+        });
+        var abstractInput = $("#mode-abstract");
+        if (abstractInput) abstractInput.checked = false;
       } catch (err) {
         toast(err.message, "error");
       } finally {

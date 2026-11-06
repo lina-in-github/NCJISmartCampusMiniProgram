@@ -14,6 +14,10 @@ var TYPES = [
   { value: "answer sheet", labelKey: "type_answer_sheet", base: "answer sheet" },
   { value: "notice", labelKey: "type_notice", base: "notice" },
   { value: "other", labelKey: "type_other", base: "other" },
+  { value: "hidden", labelKey: "type_hidden", base: "other" },
+  { value: "teacher only", labelKey: "type_teacher_only", base: "other" },
+  { value: "admin only", labelKey: "type_admin_only", base: "other" },
+  { value: "invisible", labelKey: "type_invisible", base: "other" },
 ];
 
 Page({
@@ -51,7 +55,9 @@ Page({
       wx.reLaunch({ url: "/pages/submissions/submissions" });
       return;
     }
-    var baseTypes = TYPES.map(function (t) {
+    var baseTypes = TYPES.filter(function (t) {
+      return ctx.role === "admin" || t.value !== "admin only";
+    }).map(function (t) {
       return {
         value: t.value,
         label: strings.t(t.labelKey),
@@ -111,10 +117,12 @@ Page({
       var bases = self.data.typeBases.slice();
       (res.modes || []).forEach(function (mode) {
         if (mode.builtin) return;
+        if (mode.abstract) return;
+        if (mode.adminOnly && ctx.role !== "admin") return;
         var name = mode.modeName || mode.name || "";
         if (!name || known[String(name).toLowerCase()]) return;
         known[String(name).toLowerCase()] = true;
-        labels.push(name);
+        labels.push(mode.displayName || name);
         values.push(name);
         bases.push(mode.baseType || "other");
       });
@@ -141,8 +149,8 @@ Page({
     });
   },
 
-  onDeadlineSwitch: function (e) {
-    this.setData({ hasDeadline: e.detail.value });
+  onDeadlineSwitch: function () {
+    this.setData({ hasDeadline: !this.data.hasDeadline });
   },
 
   onDate: function (e) {

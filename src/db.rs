@@ -8,8 +8,8 @@ use crate::tools::{
     b64_encode, hash_password, new_auth_key, new_class_code, new_id, now_ts, rand_string,
 };
 use crate::types::{
-    AuthCtx, ClassModeRow, Prefs, ReplyRow, SubmissionRow, UploadRow, UserCtx, ROLE_ADMIN,
-    ROLE_STUDENT, ROLE_TEACHER,
+    AuthCtx, ClassModeRow, ModeFlags, ModeTab, Prefs, ReplyRow, SubmissionRow, UploadRow, UserCtx,
+    ROLE_ADMIN, ROLE_STUDENT, ROLE_TEACHER,
 };
 
 pub const SCHEMA: &str = include_str!("schema.sql");
@@ -61,40 +61,51 @@ pub fn open(path: &str) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
-/// 轻量迁移：为旧数据库补上 `users.pubkey` 与 `submissions.base_type` 列。
+/// 轻量迁移：为旧数据库补上新增列（`users.pubkey`、`submissions.base_type`、
+/// `class_modes` 的显示名称与可见性属性）。
 fn migrate(conn: &Connection) -> rusqlite::Result<()> {
-    let mut has_pubkey = false;
-    {
-        let mut stmt = conn.prepare("PRAGMA table_info(users)")?;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            let name: String = row.get(1)?;
-            if name == "pubkey" {
-                has_pubkey = true;
-                break;
-            }
-        }
-    }
-    if !has_pubkey {
+    if !table_has_column(conn, "users", "pubkey")? {
         conn.execute_batch("ALTER TABLE users ADD COLUMN pubkey TEXT")?;
     }
-
-    let mut has_base_type = false;
-    {
-        let mut stmt = conn.prepare("PRAGMA table_info(submissions)")?;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            let name: String = row.get(1)?;
-            if name == "base_type" {
-                has_base_type = true;
-                break;
-            }
-        }
-    }
-    if !has_base_type {
+    if !table_has_column(conn, "submissions", "base_type")? {
         conn.execute_batch("ALTER TABLE submissions ADD COLUMN base_type TEXT")?;
     }
+    for column in ["hidden", "teacher_only", "admin_only", "invisible"] {
+        if !table_has_column(conn, "submissions", column)? {
+            conn.execute_batch(&format!(
+                "ALTER TABLE submissions ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+            ))?;
+        }
+    }
+    let class_mode_columns = [
+        ("display_name", "TEXT NOT NULL DEFAULT ''"),
+        ("hidden", "INTEGER NOT NULL DEFAULT 0"),
+        ("teacher_only", "INTEGER NOT NULL DEFAULT 0"),
+        ("admin_only", "INTEGER NOT NULL DEFAULT 0"),
+        ("invisible", "INTEGER NOT NULL DEFAULT 0"),
+        ("separate_list", "INTEGER NOT NULL DEFAULT 0"),
+        ("abstract_mode", "INTEGER NOT NULL DEFAULT 0"),
+    ];
+    for (column, ddl) in class_mode_columns {
+        if !table_has_column(conn, "class_modes", column)? {
+            conn.execute_batch(&format!(
+                "ALTER TABLE class_modes ADD COLUMN {column} {ddl}"
+            ))?;
+        }
+    }
     Ok(())
+}
+
+fn table_has_column(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// 为旧数据库中的演示账号补公钥（不覆盖用户已经设置的新公钥）。
@@ -291,7 +302,20 @@ pub fn class_code(db: &Connection, class_id: &str) -> String {
 // 征集模式（内置模式 + 班级自定义模式）
 // ---------------------------------------------------------------------------
 
-/// 内置征集模式（规范化后的名称）。
+/// 内置行为模式（规范化后的名称）。
+pub const BUILTIN_BEHAVIOR_MODES: &[&str] = &[
+    "homework",
+    "open call",
+    "leave request",
+    "survey",
+    "answer sheet",
+    "notice",
+    "other",
+];
+
+/// 全部内置模式：行为模式（可改变表单 / 校验行为）与可见性模式
+/// （隐藏 / 仅教师 / 仅管理员 / 不显示 / 单独列出）。
+/// 它们都可以直接用于征集或作为父模式被继承；`separate list` 是抽象模式。
 pub const BUILTIN_MODES: &[&str] = &[
     "homework",
     "open call",
@@ -300,6 +324,11 @@ pub const BUILTIN_MODES: &[&str] = &[
     "answer sheet",
     "notice",
     "other",
+    "hidden",
+    "teacher only",
+    "admin only",
+    "invisible",
+    "separate list",
 ];
 
 /// 把模式名规范化：去首尾空白、小写、`_` / `-` 视为空格、折叠连续空白。
@@ -312,7 +341,7 @@ pub fn normalize_mode_name(raw: &str) -> String {
         .join(" ")
 }
 
-/// 内置模式的规范名称（同时兼容若干别名）。
+/// 内置模式的规范名称（同时兼容若干别名，包括中文显示名称）。
 pub fn builtin_mode(normalized: &str) -> Option<&'static str> {
     match normalized {
         "homework" => Some("homework"),
@@ -322,38 +351,181 @@ pub fn builtin_mode(normalized: &str) -> Option<&'static str> {
         "answer sheet" | "answersheet" | "sheet" => Some("answer sheet"),
         "notice" => Some("notice"),
         "other" => Some("other"),
+        // 隐藏征集
+        "hidden" | "hidden submission" | "hide" | "隐藏" | "隐藏征集" => Some("hidden"),
+        // 仅教师征集
+        "teacher only" | "teachers only" | "teacher" | "仅教师" | "仅教师征集" => {
+            Some("teacher only")
+        }
+        // 仅管理员征集
+        "admin only" | "admins only" | "administrator only" | "仅管理员" | "仅管理员征集" => {
+            Some("admin only")
+        }
+        // 不显示征集
+        "invisible" | "not listed" | "not shown" | "不显示" | "不显示征集" => {
+            Some("invisible")
+        }
+        // 单独列出征集（抽象）
+        "separate list" | "separate lists" | "listed separately" | "list separately"
+        | "separately listed" | "单独列出" | "单独列出征集" => Some("separate list"),
         _ => None,
+    }
+}
+
+fn builtin_mode_display_name(canonical: &str) -> String {
+    let key = match canonical {
+        "homework" => "type_homework",
+        "open call" => "type_open_call",
+        "leave request" => "type_leave_request",
+        "survey" => "type_survey",
+        "answer sheet" => "type_answer_sheet",
+        "notice" => "type_notice",
+        "other" => "type_other",
+        "hidden" => "type_hidden",
+        "teacher only" => "type_teacher_only",
+        "admin only" => "type_admin_only",
+        "invisible" => "type_invisible",
+        "separate list" => "type_separate_list",
+        _ => "type_generic",
+    };
+    crate::strings::t(key)
+}
+
+fn builtin_mode_flags(canonical: &str) -> ModeFlags {
+    let mut flags = ModeFlags::default();
+    match canonical {
+        "hidden" => flags.hidden = true,
+        "teacher only" => flags.teacher_only = true,
+        "admin only" => flags.admin_only = true,
+        "invisible" => flags.invisible = true,
+        "separate list" => {
+            flags.separate_list = true;
+            flags.abstract_mode = true;
+        }
+        _ => {}
+    }
+    flags
+}
+
+fn builtin_mode_info(canonical: &str) -> ModeInfo {
+    ModeInfo {
+        id: format!("builtin_{}", canonical.replace(' ', "_")),
+        name: canonical.to_string(),
+        normalized: normalize_mode_name(canonical),
+        display_name: builtin_mode_display_name(canonical),
+        base_type: if BUILTIN_BEHAVIOR_MODES.contains(&canonical) {
+            canonical.to_string()
+        } else {
+            "other".to_string()
+        },
+        extend_modes: Vec::new(),
+        ancestors: vec![normalize_mode_name(canonical)],
+        flags: builtin_mode_flags(canonical),
+        builtin: true,
+        created_at: 0,
     }
 }
 
 /// 一个已解析的征集模式。
 #[derive(Clone, Debug)]
 pub struct ModeInfo {
-    /// 展示名称（内置模式为规范英文名，自定义模式为创建时的名称）。
+    pub id: String,
+    /// 模式名（内置模式为规范英文名，自定义模式为创建时的名称）。
     pub name: String,
+    /// 规范化名称。
+    pub normalized: String,
+    /// 展示名称（支持中文）；内置模式由 strings 本地化。
+    pub display_name: String,
     /// 行为基类：`survey` / `answer sheet` / `notice` / `homework` 等。
     pub base_type: String,
+    /// 直接继承的父模式（规范化名称）。
+    pub extend_modes: Vec<String>,
+    /// 继承链（含自身，规范化名称），用于「单独列出」分类过滤与菱形检测。
+    pub ancestors: Vec<String>,
+    /// 可见性 / 列表属性（含继承；抽象属性不继承）。
+    pub flags: ModeFlags,
+    /// 是否为内置模式。
+    pub builtin: bool,
+    pub created_at: i64,
+}
+
+impl ModeInfo {
+    pub fn effective_display_name(&self) -> String {
+        if self.display_name.trim().is_empty() {
+            self.name.clone()
+        } else {
+            self.display_name.clone()
+        }
+    }
+
+    pub fn to_json(&self) -> Value {
+        let mut value = json!({
+            "id": self.id,
+            "name": self.name,
+            "modeName": self.name,
+            "displayName": self.effective_display_name(),
+            "normalized": self.normalized,
+            "baseType": self.base_type,
+            "extendModes": self.extend_modes,
+            "inheritModes": self.ancestors,
+            "builtin": self.builtin,
+            "hidden": self.flags.hidden,
+            "teacherOnly": self.flags.teacher_only,
+            "adminOnly": self.flags.admin_only,
+            "invisible": self.flags.invisible,
+            "separateList": self.flags.separate_list,
+            "abstract": self.flags.abstract_mode,
+            "flags": self.flags,
+        });
+        if let Some(map) = value.as_object_mut() {
+            map.insert(
+                "visibility".to_string(),
+                Value::String(crate::types::visibility_name(&self.flags)),
+            );
+            map.insert(
+                "createdAt".to_string(),
+                if self.builtin {
+                    Value::Null
+                } else {
+                    Value::String(crate::tools::fmt_iso(self.created_at))
+                },
+            );
+        }
+        value
+    }
 }
 
 pub fn list_class_modes(db: &Connection, class_id: &str) -> Vec<ClassModeRow> {
     let mut stmt = match db.prepare(
-        "SELECT id, name, normalized, extend_modes, base_type, created_at, created_by, created_name
+        "SELECT id, name, normalized, display_name, extend_modes, base_type,
+                hidden, teacher_only, admin_only, invisible, separate_list, abstract_mode,
+                created_at, created_by, created_name
          FROM class_modes WHERE class_id = ?1 ORDER BY name COLLATE NOCASE, created_at",
     ) {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
     let rows = stmt.query_map(params![class_id], |r| {
+        let flags = ModeFlags {
+            hidden: r.get::<_, i64>(6)? != 0,
+            teacher_only: r.get::<_, i64>(7)? != 0,
+            admin_only: r.get::<_, i64>(8)? != 0,
+            invisible: r.get::<_, i64>(9)? != 0,
+            separate_list: r.get::<_, i64>(10)? != 0,
+            abstract_mode: r.get::<_, i64>(11)? != 0,
+        };
         Ok(ClassModeRow {
             id: r.get(0)?,
             name: r.get(1)?,
             normalized: r.get(2)?,
-            extend_modes: serde_json::from_str::<Vec<String>>(&r.get::<_, String>(3)?)
+            display_name: r.get(3)?,
+            extend_modes: serde_json::from_str::<Vec<String>>(&r.get::<_, String>(4)?)
                 .unwrap_or_default(),
-            base_type: r.get(4)?,
-            created_at: r.get(5)?,
-            created_by: r.get(6)?,
-            created_name: r.get(7)?,
+            base_type: r.get(5)?,
+            flags,
+            created_at: r.get(12)?,
+            created_by: r.get(13)?,
+            created_name: r.get(14)?,
         })
     });
     match rows {
@@ -362,26 +534,33 @@ pub fn list_class_modes(db: &Connection, class_id: &str) -> Vec<ClassModeRow> {
     }
 }
 
-/// 解析一个模式名（内置或班级自定义）。返回 `None` 表示未定义。
-pub fn find_mode(db: &Connection, class_id: &str, raw: &str) -> Option<ModeInfo> {
-    let normalized = normalize_mode_name(raw);
-    if normalized.is_empty() {
-        return None;
-    }
-    if let Some(canonical) = builtin_mode(&normalized) {
-        return Some(ModeInfo {
-            name: canonical.to_string(),
-            base_type: canonical.to_string(),
-        });
-    }
+fn load_class_mode_row(db: &Connection, class_id: &str, normalized: &str) -> Option<ClassModeRow> {
     db.query_row(
-        "SELECT name, normalized, base_type, extend_modes FROM class_modes
-         WHERE class_id = ?1 AND normalized = ?2",
+        "SELECT id, name, normalized, display_name, extend_modes, base_type,
+                hidden, teacher_only, admin_only, invisible, separate_list, abstract_mode,
+                created_at, created_by, created_name
+         FROM class_modes WHERE class_id = ?1 AND normalized = ?2",
         params![class_id, normalized],
         |r| {
-            Ok(ModeInfo {
-                name: r.get(0)?,
-                base_type: r.get(2)?,
+            Ok(ClassModeRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                normalized: r.get(2)?,
+                display_name: r.get(3)?,
+                extend_modes: serde_json::from_str::<Vec<String>>(&r.get::<_, String>(4)?)
+                    .unwrap_or_default(),
+                base_type: r.get(5)?,
+                flags: ModeFlags {
+                    hidden: r.get::<_, i64>(6)? != 0,
+                    teacher_only: r.get::<_, i64>(7)? != 0,
+                    admin_only: r.get::<_, i64>(8)? != 0,
+                    invisible: r.get::<_, i64>(9)? != 0,
+                    separate_list: r.get::<_, i64>(10)? != 0,
+                    abstract_mode: r.get::<_, i64>(11)? != 0,
+                },
+                created_at: r.get(12)?,
+                created_by: r.get(13)?,
+                created_name: r.get(14)?,
             })
         },
     )
@@ -390,9 +569,111 @@ pub fn find_mode(db: &Connection, class_id: &str, raw: &str) -> Option<ModeInfo>
     .flatten()
 }
 
+/// 解析一个模式名（内置或班级自定义）。返回 `None` 表示未定义。
+///
+/// 除模式名外也接受创建时填写的「显示名称」（例如中文标签页名称）。
+pub fn find_mode(db: &Connection, class_id: &str, raw: &str) -> Option<ModeInfo> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let mut visiting = Vec::new();
+    if let Some(info) = find_mode_inner(db, class_id, raw, &mut visiting) {
+        return Some(info);
+    }
+    let display_match: Option<String> = db
+        .query_row(
+            "SELECT normalized FROM class_modes
+             WHERE class_id = ?1 AND (display_name = ?2 COLLATE NOCASE OR name = ?2 COLLATE NOCASE)
+             LIMIT 1",
+            params![class_id, raw],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    display_match.and_then(|normalized| {
+        let mut visiting = Vec::new();
+        find_mode_inner(db, class_id, &normalized, &mut visiting)
+    })
+}
+
+fn find_mode_inner(
+    db: &Connection,
+    class_id: &str,
+    raw: &str,
+    visiting: &mut Vec<String>,
+) -> Option<ModeInfo> {
+    let normalized = normalize_mode_name(raw);
+    if normalized.is_empty() {
+        return None;
+    }
+    if let Some(canonical) = builtin_mode(&normalized) {
+        return Some(builtin_mode_info(canonical));
+    }
+    let row = load_class_mode_row(db, class_id, &normalized)?;
+    if visiting.iter().any(|v| v == &normalized) {
+        // 数据损坏导致的环：停止向下解析，但仍然返回当前模式。
+        let display_name = row.effective_display_name();
+        return Some(ModeInfo {
+            id: row.id,
+            name: row.name,
+            normalized: row.normalized,
+            display_name,
+            base_type: row.base_type,
+            extend_modes: row.extend_modes,
+            ancestors: vec![normalized],
+            flags: row.flags,
+            builtin: false,
+            created_at: row.created_at,
+        });
+    }
+    visiting.push(normalized.clone());
+    let mut ancestors = vec![normalized.clone()];
+    let mut flags = row.flags;
+    for parent in &row.extend_modes {
+        if let Some(info) = find_mode_inner(db, class_id, parent, visiting) {
+            flags.inherit_from(&info.flags);
+            for a in info.ancestors {
+                if !ancestors.contains(&a) {
+                    ancestors.push(a);
+                }
+            }
+        }
+    }
+    visiting.pop();
+    let display_name = row.effective_display_name();
+    Some(ModeInfo {
+        id: row.id,
+        name: row.name,
+        normalized: row.normalized,
+        display_name,
+        base_type: row.base_type,
+        extend_modes: row.extend_modes,
+        ancestors,
+        flags,
+        builtin: false,
+        created_at: row.created_at,
+    })
+}
+
 /// 解析班级可用的征集模式（内置或自定义）；未定义时返回 `None`。
 pub fn resolve_mode(db: &Connection, class_id: &str, raw: &str) -> Option<ModeInfo> {
     find_mode(db, class_id, raw)
+}
+
+/// 当前班级全部可用模式（内置 + 自定义）。
+pub fn list_mode_infos(db: &Connection, class_id: &str) -> Vec<ModeInfo> {
+    let mut out: Vec<ModeInfo> = BUILTIN_MODES
+        .iter()
+        .filter_map(|name| builtin_mode(name).map(builtin_mode_info))
+        .collect();
+    for row in list_class_modes(db, class_id) {
+        if let Some(info) = find_mode(db, class_id, &row.normalized) {
+            out.push(info);
+        }
+    }
+    out
 }
 
 fn pick_base_type(bases: &[String]) -> String {
@@ -415,12 +696,47 @@ fn pick_base_type(bases: &[String]) -> String {
         .unwrap_or_else(|| "other".to_string())
 }
 
-/// 创建班级自定义征集模式（管理员）。
+/// 创建自定义模式的参数。
+///
+/// 可见性不在创建参数里单独声明，而是通过 `extends` 继承内置模式
+/// （`hidden` / `teacher only` / `admin only` / `invisible` / `separate list`）。
+/// 只有「抽象类别」例外：抽象属性不继承，必须显式声明。
+#[derive(Clone, Debug, Default)]
+pub struct ModeCreateOptions {
+    pub display_name: String,
+    pub abstract_mode: bool,
+}
+
+/// 创建班级自定义征集模式（管理员）。`extends` 为父模式名。
 pub fn create_class_mode(
     db: &Connection,
     auth: &AuthCtx,
     name: &str,
     extends: &[String],
+) -> Result<ClassModeRow, String> {
+    create_class_mode_with_options(db, auth, name, extends, &ModeCreateOptions::default())
+}
+
+/// 创建班级自定义征集模式（带显示名称；可见性由 `extends` 继承，抽象属性显式声明）。
+///
+/// 允许嵌套继承；任意两个父模式的继承链（含父模式自身）若有交集，
+/// 说明同一个祖先存在多条继承路径（菱形继承），直接拒绝。
+pub fn create_class_mode_with_options(
+    db: &Connection,
+    auth: &AuthCtx,
+    name: &str,
+    extends: &[String],
+    options: &ModeCreateOptions,
+) -> Result<ClassModeRow, String> {
+    create_class_mode_impl(db, auth, name, extends, options)
+}
+
+fn create_class_mode_impl(
+    db: &Connection,
+    auth: &AuthCtx,
+    name: &str,
+    extends: &[String],
+    options: &ModeCreateOptions,
 ) -> Result<ClassModeRow, String> {
     let name = name.trim();
     if name.is_empty() {
@@ -431,6 +747,13 @@ pub fn create_class_mode(
     }
     if name.chars().any(char::is_control) {
         return Err("modeName must not contain control characters".to_string());
+    }
+    let display_name = options.display_name.trim();
+    if display_name.chars().count() > 60 {
+        return Err("displayName is too long (max 60 characters)".to_string());
+    }
+    if display_name.chars().any(char::is_control) {
+        return Err("displayName must not contain control characters".to_string());
     }
     let normalized = normalize_mode_name(name);
     if normalized.is_empty() {
@@ -443,8 +766,8 @@ pub fn create_class_mode(
         return Err("extendModes supports at most 16 entries".to_string());
     }
     let mut seen = std::collections::HashSet::new();
-    let mut extend_modes = Vec::new();
-    let mut bases = Vec::new();
+    let mut extend_modes: Vec<String> = Vec::new();
+    let mut parents: Vec<ModeInfo> = Vec::new();
     for raw in extends {
         let raw = raw.trim();
         if raw.is_empty() {
@@ -453,26 +776,69 @@ pub fn create_class_mode(
         let Some(info) = find_mode(db, &auth.class_id, raw) else {
             return Err(format!("unknown extend mode: {raw}"));
         };
-        let normalized = normalize_mode_name(&info.name);
-        if seen.insert(normalized.clone()) {
-            extend_modes.push(normalized);
-            bases.push(info.base_type.clone());
+        if seen.insert(info.normalized.clone()) {
+            extend_modes.push(info.normalized.clone());
+            parents.push(info);
         }
     }
+    // 菱形继承检测：任意两个父模式的继承链不能有交集。
+    for i in 0..parents.len() {
+        for j in (i + 1)..parents.len() {
+            if let Some(common) = parents[i]
+                .ancestors
+                .iter()
+                .find(|a| parents[j].ancestors.contains(a))
+            {
+                return Err(format!(
+                    "diamond inheritance is not allowed: '{}' and '{}' both inherit '{}'",
+                    parents[i].name, parents[j].name, common
+                ));
+            }
+        }
+    }
+    let bases: Vec<String> = parents.iter().map(|p| p.base_type.clone()).collect();
     let base_type = pick_base_type(&bases);
+    // 可见性全部来自继承链；抽象属性不继承，只接受显式声明。
+    let mut flags = ModeFlags::default();
+    for parent in &parents {
+        flags.inherit_from(&parent.flags);
+    }
+    flags.abstract_mode = options.abstract_mode;
+    let mut ancestors: Vec<String> = vec![normalized.clone()];
+    for parent in &parents {
+        for a in &parent.ancestors {
+            if !ancestors.contains(a) {
+                ancestors.push(a.clone());
+            }
+        }
+    }
     let id = new_id("mode");
     let now = now_ts();
+    let stored_display_name = if display_name.is_empty() {
+        name.to_string()
+    } else {
+        display_name.to_string()
+    };
     db.execute(
         "INSERT INTO class_modes
-         (id, class_id, name, normalized, extend_modes, base_type, created_at, created_by, created_name)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+         (id, class_id, name, normalized, display_name, extend_modes, base_type,
+          hidden, teacher_only, admin_only, invisible, separate_list, abstract_mode,
+          created_at, created_by, created_name)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         params![
             id,
             auth.class_id,
             name,
             normalized,
+            stored_display_name,
             serde_json::to_string(&extend_modes).unwrap_or_else(|_| "[]".to_string()),
             base_type,
+            flags.hidden as i64,
+            flags.teacher_only as i64,
+            flags.admin_only as i64,
+            flags.invisible as i64,
+            flags.separate_list as i64,
+            flags.abstract_mode as i64,
             now,
             auth.id,
             auth.identity()
@@ -483,8 +849,10 @@ pub fn create_class_mode(
         id,
         name: name.to_string(),
         normalized,
+        display_name: stored_display_name,
         extend_modes,
         base_type,
+        flags,
         created_at: now,
         created_by: Some(auth.id.clone()),
         created_name: auth.identity(),
@@ -703,6 +1071,54 @@ pub fn submission_meta(db: &Connection, id: &str) -> Option<(String, String, Str
     .flatten()
 }
 
+/// 上传时需要的征集信息：班级、行为基类、说明与模式可见性。
+pub fn submission_meta_access(
+    db: &Connection,
+    id: &str,
+) -> Option<(String, String, String, ModeFlags)> {
+    let (class_id, kind, base_type, desc, own): (
+        String,
+        String,
+        Option<String>,
+        String,
+        ModeFlags,
+    ) = db
+        .query_row(
+            "SELECT class_id, type, base_type, desc, hidden, teacher_only, admin_only, invisible
+             FROM submissions WHERE id = ?1",
+            params![id],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    ModeFlags {
+                        hidden: r.get::<_, i64>(4)? != 0,
+                        teacher_only: r.get::<_, i64>(5)? != 0,
+                        admin_only: r.get::<_, i64>(6)? != 0,
+                        invisible: r.get::<_, i64>(7)? != 0,
+                        ..ModeFlags::default()
+                    },
+                ))
+            },
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+    let effective = base_type
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| kind.clone());
+    let mut flags = find_mode(db, &class_id, &kind)
+        .map(|info| info.flags)
+        .unwrap_or_default();
+    flags.hidden |= own.hidden;
+    flags.teacher_only |= own.teacher_only;
+    flags.admin_only |= own.admin_only;
+    flags.invisible |= own.invisible;
+    Some((class_id, effective, desc, flags))
+}
+
 pub fn upload_class_id(db: &Connection, id: &str) -> Option<String> {
     db.query_row(
         "SELECT class_id FROM uploads WHERE id = ?1",
@@ -740,6 +1156,15 @@ fn map_submission_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<SubmissionRow> 
         last_upload_id: r.get(10)?,
         base_kind: r.get(11)?,
         created_by: r.get(12)?,
+        display_name: String::new(),
+        flags: ModeFlags {
+            hidden: r.get::<_, i64>(13)? != 0,
+            teacher_only: r.get::<_, i64>(14)? != 0,
+            admin_only: r.get::<_, i64>(15)? != 0,
+            invisible: r.get::<_, i64>(16)? != 0,
+            ..ModeFlags::default()
+        },
+        mode_ancestors: Vec::new(),
     })
 }
 
@@ -764,6 +1189,125 @@ fn map_upload_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<UploadRow> {
         submission_created_by: r.get(14)?,
         submission_created_name: r.get(15)?,
     })
+}
+
+/// 为征集行补充模式的显示名称、可见性属性与继承链。
+fn decorate_submissions(db: &Connection, class_id: &str, rows: &mut [SubmissionRow]) {
+    if rows.is_empty() {
+        return;
+    }
+    let infos = list_mode_infos(db, class_id);
+    let mut by_norm = std::collections::HashMap::new();
+    for info in infos {
+        by_norm.insert(info.normalized.clone(), info);
+    }
+    for row in rows {
+        let normalized = normalize_mode_name(&row.kind);
+        let own_flags = row.flags;
+        if let Some(info) = by_norm.get(&normalized) {
+            row.display_name = info.effective_display_name();
+            row.flags = info.flags;
+            row.flags.hidden |= own_flags.hidden;
+            row.flags.teacher_only |= own_flags.teacher_only;
+            row.flags.admin_only |= own_flags.admin_only;
+            row.flags.invisible |= own_flags.invisible;
+            row.mode_ancestors = info.ancestors.clone();
+        } else {
+            row.display_name = row.kind.clone();
+            row.flags = own_flags;
+            row.mode_ancestors = vec![normalized];
+        }
+    }
+}
+
+/// 「单独列出」分类标签页（不包括抽象基类自身）。
+pub fn separate_mode_tabs(
+    db: &Connection,
+    class_id: &str,
+    rows: &[SubmissionRow],
+    role: &str,
+) -> Vec<ModeTab> {
+    let mut tabs = Vec::new();
+    for info in list_mode_infos(db, class_id) {
+        if !info.flags.separate_list || info.flags.abstract_mode {
+            continue;
+        }
+        if !info.flags.can_view(role) {
+            continue;
+        }
+        let count = rows
+            .iter()
+            .filter(|row| row.mode_ancestors.iter().any(|a| a == &info.normalized))
+            .count() as i64;
+        tabs.push(ModeTab {
+            id: info.id.clone(),
+            name: info.name.clone(),
+            display_name: info.effective_display_name(),
+            normalized: info.normalized.clone(),
+            count,
+        });
+    }
+    tabs.sort_by(|a, b| {
+        a.display_name
+            .to_lowercase()
+            .cmp(&b.display_name.to_lowercase())
+            .then_with(|| a.normalized.cmp(&b.normalized))
+    });
+    tabs
+}
+
+/// 按「单独列出」分类过滤征集行；分类可以写模式名或显示名称。
+pub fn filter_submissions_category(
+    db: &Connection,
+    class_id: &str,
+    rows: &mut Vec<SubmissionRow>,
+    category: &str,
+) {
+    let category = category.trim();
+    if category.is_empty() {
+        return;
+    }
+    let normalized = find_mode(db, class_id, category)
+        .map(|info| info.normalized)
+        .unwrap_or_else(|| normalize_mode_name(category));
+    rows.retain(|row| {
+        row.mode_ancestors.iter().any(|a| a == &normalized)
+            || normalize_mode_name(&row.kind) == normalized
+    });
+}
+
+/// 征集对当前角色是否可见（按 ID 直接访问也使用该规则）。
+pub fn submission_access(db: &Connection, submission_id: &str) -> Option<(String, ModeFlags)> {
+    let (class_id, kind, own): (String, String, ModeFlags) = db
+        .query_row(
+            "SELECT class_id, type, hidden, teacher_only, admin_only, invisible
+             FROM submissions WHERE id = ?1",
+            params![submission_id],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    ModeFlags {
+                        hidden: r.get::<_, i64>(2)? != 0,
+                        teacher_only: r.get::<_, i64>(3)? != 0,
+                        admin_only: r.get::<_, i64>(4)? != 0,
+                        invisible: r.get::<_, i64>(5)? != 0,
+                        ..ModeFlags::default()
+                    },
+                ))
+            },
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+    let mut flags = find_mode(db, &class_id, &kind)
+        .map(|info| info.flags)
+        .unwrap_or_default();
+    flags.hidden |= own.hidden;
+    flags.teacher_only |= own.teacher_only;
+    flags.admin_only |= own.admin_only;
+    flags.invisible |= own.invisible;
+    Some((class_id, flags))
 }
 
 fn submission_sql(staff: bool, with_limit: bool, own_first: bool) -> String {
@@ -794,7 +1338,7 @@ fn submission_sql(staff: bool, with_limit: bool, own_first: bool) -> String {
                     AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
                 (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
                     ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
-                s.base_type, s.created_by
+                s.base_type, s.created_by, s.hidden, s.teacher_only, s.admin_only, s.invisible
              FROM submissions s WHERE s.class_id = ?1
              ORDER BY CASE WHEN LOWER(TRIM(COALESCE(NULLIF(TRIM(s.base_type), ''), s.type))) = 'notice' AND (s.deadline IS NULL OR s.deadline > CAST(strftime('%s','now') AS INTEGER)) THEN 0 ELSE 1 END, {own_order}CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
         )
@@ -807,7 +1351,7 @@ fn submission_sql(staff: bool, with_limit: bool, own_first: bool) -> String {
                     AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
                 (SELECT u.id FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2
                     ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
-                s.base_type, s.created_by
+                s.base_type, s.created_by, s.hidden, s.teacher_only, s.admin_only, s.invisible
              FROM submissions s WHERE s.class_id = ?1
              ORDER BY CASE WHEN LOWER(TRIM(COALESCE(NULLIF(TRIM(s.base_type), ''), s.type))) = 'notice' AND (s.deadline IS NULL OR s.deadline > CAST(strftime('%s','now') AS INTEGER)) THEN 0 ELSE 1 END, CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
         )
@@ -819,6 +1363,17 @@ pub fn list_submissions(
     auth: &AuthCtx,
     limit: i64,
     own_first: bool,
+) -> Vec<SubmissionRow> {
+    list_submissions_visible(db, auth, limit, own_first, false)
+}
+
+/// 全部征集列表（按可见性过滤）。`show_hiddens` 对应需求中的 `show-hiddens`。
+pub fn list_submissions_visible(
+    db: &Connection,
+    auth: &AuthCtx,
+    limit: i64,
+    own_first: bool,
+    show_hiddens: bool,
 ) -> Vec<SubmissionRow> {
     let staff = auth.is_staff();
     let sql = submission_sql(staff, true, own_first);
@@ -835,10 +1390,13 @@ pub fn list_submissions(
     } else {
         stmt.query_map(params![auth.class_id, auth.id, limit], map_submission_row)
     };
-    match rows {
+    let mut out: Vec<SubmissionRow> = match rows {
         Ok(iter) => iter.filter_map(Result::ok).collect(),
-        Err(_) => Vec::new(),
-    }
+        Err(_) => return Vec::new(),
+    };
+    decorate_submissions(db, &auth.class_id, &mut out);
+    out.retain(|row| row.flags.listed(&auth.role, show_hiddens));
+    out
 }
 
 pub fn load_submission(db: &Connection, auth: &AuthCtx, sub_id: &str) -> Option<SubmissionRow> {
@@ -851,7 +1409,7 @@ pub fn load_submission(db: &Connection, auth: &AuthCtx, sub_id: &str) -> Option<
                 AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
             (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
                 ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
-            s.base_type, s.created_by
+            s.base_type, s.created_by, s.hidden, s.teacher_only, s.admin_only, s.invisible
          FROM submissions s WHERE s.id = ?1 AND s.class_id = ?2"
     } else {
         "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
@@ -861,10 +1419,10 @@ pub fn load_submission(db: &Connection, auth: &AuthCtx, sub_id: &str) -> Option<
                 AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
             (SELECT u.id FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3
                 ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
-            s.base_type, s.created_by
+            s.base_type, s.created_by, s.hidden, s.teacher_only, s.admin_only, s.invisible
          FROM submissions s WHERE s.id = ?1 AND s.class_id = ?2"
     };
-    let row = if staff {
+    let mut row = if staff {
         db.query_row(sql, params![sub_id, auth.class_id], map_submission_row)
     } else {
         db.query_row(
@@ -872,8 +1430,15 @@ pub fn load_submission(db: &Connection, auth: &AuthCtx, sub_id: &str) -> Option<
             params![sub_id, auth.class_id, auth.id],
             map_submission_row,
         )
-    };
-    row.optional().ok().flatten()
+    }
+    .optional()
+    .ok()
+    .flatten()?;
+    decorate_submissions(db, &auth.class_id, std::slice::from_mut(&mut row));
+    if !row.flags.can_view(&auth.role) {
+        return None;
+    }
+    Some(row)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -997,7 +1562,7 @@ pub fn list_my_submissions(db: &Connection, auth: &AuthCtx, limit: i64) -> Vec<S
                 AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
             (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
                 ORDER BY u.created_at DESC, u.id DESC LIMIT 1),
-            s.base_type, s.created_by
+            s.base_type, s.created_by, s.hidden, s.teacher_only, s.admin_only, s.invisible
          FROM submissions s WHERE s.class_id = ?1 AND s.created_by = ?2
          ORDER BY s.created_at DESC, s.id DESC LIMIT ?3";
     let mut stmt = match db.prepare(sql) {
@@ -1005,10 +1570,12 @@ pub fn list_my_submissions(db: &Connection, auth: &AuthCtx, limit: i64) -> Vec<S
         Err(_) => return Vec::new(),
     };
     let rows = stmt.query_map(params![auth.class_id, auth.id, limit], map_submission_row);
-    match rows {
+    let mut out: Vec<SubmissionRow> = match rows {
         Ok(iter) => iter.filter_map(Result::ok).collect(),
-        Err(_) => Vec::new(),
-    }
+        Err(_) => return Vec::new(),
+    };
+    decorate_submissions(db, &auth.class_id, &mut out);
+    out
 }
 
 pub fn load_upload(db: &Connection, auth: &AuthCtx, upload_id: &str) -> Option<UploadRow> {
@@ -1145,23 +1712,16 @@ pub fn home_counts(db: &Connection, auth: &AuthCtx, now: i64) -> HomeCounts {
             |r| r.get(0),
         )
         .unwrap_or(0);
-    let submissions: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM submissions WHERE class_id = ?1",
-            params![auth.class_id],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
+    // 统计只计入当前角色在「全部征集」列表中可见的征集（隐藏 / 仅教师 / 仅管理员 /
+    // 不显示都会按可见性规则排除；隐藏开关只影响列表，不影响首页统计）。
+    let visible = list_submissions_visible(db, auth, i64::MAX, false, false);
+    let submissions = visible.len() as i64;
+    let active = visible
+        .iter()
+        .filter(|row| row.deadline.map_or(true, |deadline| deadline > now))
+        .count() as i64;
     let (uploads, pending, replied) = upload_counts(db, auth);
     if auth.is_staff() {
-        let active: i64 = db
-            .query_row(
-                "SELECT COUNT(*) FROM submissions
-                 WHERE class_id = ?1 AND (deadline IS NULL OR deadline > ?2)",
-                params![auth.class_id, now],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
         HomeCounts {
             members,
             submissions,
@@ -1359,11 +1919,37 @@ pub fn insert_submission_mode(
     base_kind: &str,
     deadline: Option<i64>,
 ) -> Result<String, String> {
+    insert_submission_mode_flags(
+        db,
+        auth,
+        name,
+        desc,
+        kind,
+        base_kind,
+        deadline,
+        &ModeFlags::default(),
+    )
+}
+
+/// 插入征集，并保存单条征集的可见性覆盖（与模式属性取并集）。
+#[allow(clippy::too_many_arguments)]
+pub fn insert_submission_mode_flags(
+    db: &Connection,
+    auth: &AuthCtx,
+    name: &str,
+    desc: &str,
+    kind: &str,
+    base_kind: &str,
+    deadline: Option<i64>,
+    flags: &ModeFlags,
+) -> Result<String, String> {
     let id = new_id("sub");
     db.execute(
         "INSERT INTO submissions
-         (id, class_id, name, desc, type, base_type, deadline, created_at, created_by, created_name)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         (id, class_id, name, desc, type, base_type,
+          hidden, teacher_only, admin_only, invisible,
+          deadline, created_at, created_by, created_name)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             id,
             auth.class_id,
@@ -1371,6 +1957,10 @@ pub fn insert_submission_mode(
             desc,
             kind,
             base_kind,
+            flags.hidden as i64,
+            flags.teacher_only as i64,
+            flags.admin_only as i64,
+            flags.invisible as i64,
             deadline,
             now_ts(),
             auth.id,
@@ -2490,6 +3080,193 @@ mod tests {
             assert_eq!(row.kind, mode.name);
             assert!(row.is_answer_sheet());
             assert!(row.is_form());
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn mode_visibility_inheritance_and_tabs() {
+        let path = temp_db();
+        {
+            let conn = open(&path).unwrap();
+            let admin = load_auth_by_key(&conn, DEMO_ADMIN_KEY).unwrap();
+            let teacher = load_auth_by_key(&conn, DEMO_TEACHER_KEY).unwrap();
+            let student = load_auth_by_key(&conn, DEMO_STUDENT_KEY).unwrap();
+
+            // 单独列出类别 + 中文显示名称。
+            let separate = create_class_mode_with_options(
+                &conn,
+                &admin,
+                "weekly report",
+                &["homework".to_string(), "separate list".to_string()],
+                &ModeCreateOptions {
+                    display_name: "每周汇报".to_string(),
+                    ..ModeCreateOptions::default()
+                },
+            )
+            .unwrap();
+            assert!(separate.flags.separate_list);
+            assert!(!separate.flags.abstract_mode);
+            // 嵌套继承：子类别继承父类别的单独列出属性。
+            let child = create_class_mode_with_options(
+                &conn,
+                &admin,
+                "weekly report math",
+                &["weekly report".to_string()],
+                &ModeCreateOptions {
+                    display_name: "数学周报".to_string(),
+                    ..ModeCreateOptions::default()
+                },
+            )
+            .unwrap();
+            assert!(child.flags.separate_list);
+            let child_info = find_mode(&conn, &admin.class_id, "数学周报").unwrap();
+            assert!(child_info.ancestors.contains(&"weekly report".to_string()));
+            // 菱形继承被拒绝：两个父模式共享祖先 homework。
+            let cousin = create_class_mode_with_options(
+                &conn,
+                &admin,
+                "weekly report english",
+                &["homework".to_string()],
+                &ModeCreateOptions::default(),
+            )
+            .unwrap();
+            let diamond = create_class_mode_with_options(
+                &conn,
+                &admin,
+                "bad diamond",
+                &[
+                    "weekly report".to_string(),
+                    "weekly report english".to_string(),
+                ],
+                &ModeCreateOptions::default(),
+            );
+            assert!(diamond.is_err());
+            assert!(cousin.flags.separate_list == false);
+
+            // 抽象类别（内置「单独列出征集」）不能直接发布。
+            let abstract_try =
+                insert_submission_mode(&conn, &teacher, "抽象", "", "separate list", "other", None);
+            assert!(abstract_try.is_ok()); // db 层不拦截，API 层拦截
+            let hidden_mode = create_class_mode_with_options(
+                &conn,
+                &admin,
+                "secret",
+                &["homework".to_string(), "hidden".to_string()],
+                &ModeCreateOptions {
+                    display_name: "秘密".to_string(),
+                    ..ModeCreateOptions::default()
+                },
+            )
+            .unwrap();
+            let invisible_mode = create_class_mode_with_options(
+                &conn,
+                &admin,
+                "ghost",
+                &["homework".to_string(), "invisible".to_string()],
+                &ModeCreateOptions::default(),
+            )
+            .unwrap();
+            assert!(invisible_mode.flags.invisible);
+            // 抽象属性例外：不继承，必须在创建时显式声明。
+            let abstract_mode = create_class_mode_with_options(
+                &conn,
+                &admin,
+                "abstract category",
+                &["separate list".to_string()],
+                &ModeCreateOptions {
+                    display_name: "抽象类别".to_string(),
+                    abstract_mode: true,
+                },
+            )
+            .unwrap();
+            assert!(abstract_mode.flags.separate_list);
+            assert!(abstract_mode.flags.abstract_mode);
+
+            let normal =
+                insert_submission_mode(&conn, &teacher, "普通", "", "homework", "homework", None)
+                    .unwrap();
+            let hidden = insert_submission_mode(
+                &conn,
+                &teacher,
+                "隐藏",
+                "",
+                &hidden_mode.name,
+                &hidden_mode.base_type,
+                None,
+            )
+            .unwrap();
+            let invisible = insert_submission_mode(
+                &conn,
+                &teacher,
+                "不显示",
+                "",
+                &invisible_mode.name,
+                &invisible_mode.base_type,
+                None,
+            )
+            .unwrap();
+            let tabbed = insert_submission_mode(
+                &conn,
+                &teacher,
+                "周报",
+                "",
+                &separate.name,
+                &separate.base_type,
+                None,
+            )
+            .unwrap();
+            // 单条征集可见性覆盖。
+            let own_hidden = insert_submission_mode_flags(
+                &conn,
+                &teacher,
+                "单条隐藏",
+                "",
+                "homework",
+                "homework",
+                None,
+                &ModeFlags {
+                    hidden: true,
+                    ..ModeFlags::default()
+                },
+            )
+            .unwrap();
+
+            let teacher_default = list_submissions_visible(&conn, &teacher, 500, false, false);
+            let teacher_names: Vec<&str> =
+                teacher_default.iter().map(|r| r.name.as_str()).collect();
+            assert!(teacher_names.contains(&"普通"));
+            assert!(!teacher_names.contains(&"隐藏"));
+            assert!(!teacher_names.contains(&"不显示"));
+            assert!(teacher_names.contains(&"周报"));
+            assert!(!teacher_names.contains(&"单条隐藏"));
+
+            let teacher_hidden = list_submissions_visible(&conn, &teacher, 500, false, true);
+            let hidden_names: Vec<&str> = teacher_hidden.iter().map(|r| r.name.as_str()).collect();
+            assert!(hidden_names.contains(&"隐藏"));
+            assert!(hidden_names.contains(&"单条隐藏"));
+            assert!(!hidden_names.contains(&"不显示"));
+
+            let student_shown = list_submissions_visible(&conn, &student, 500, false, true);
+            assert!(student_shown.iter().any(|r| r.id == hidden));
+            assert!(student_shown.iter().all(|r| r.id != invisible));
+
+            let tabs = separate_mode_tabs(&conn, &admin.class_id, &teacher_hidden, "admin");
+            let tab_names: Vec<&str> = tabs.iter().map(|t| t.display_name.as_str()).collect();
+            assert!(tab_names.contains(&"每周汇报"));
+            assert!(tab_names.contains(&"数学周报"));
+            assert!(!tab_names.contains(&"单独列出征集"));
+
+            let mut filtered = teacher_hidden.clone();
+            filter_submissions_category(&conn, &admin.class_id, &mut filtered, "数学周报");
+            assert!(filtered.iter().all(|r| r.name != "周报"));
+            let mut filtered_all = teacher_hidden.clone();
+            filter_submissions_category(&conn, &admin.class_id, &mut filtered_all, "每周汇报");
+            assert!(filtered_all.iter().any(|r| r.id == tabbed));
+
+            // 不可见征集仍可按 ID 直接访问 / 上传（角色允许时）。
+            assert!(submission_access(&conn, &invisible).is_some());
+            assert!(load_submission(&conn, &teacher, &invisible).is_some());
         }
         let _ = std::fs::remove_file(&path);
     }

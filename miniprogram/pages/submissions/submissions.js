@@ -17,6 +17,9 @@ Page({
     rows: [],
     total: 0,
     scope: "all",
+    showHiddens: false,
+    tabs: [],
+    activeTab: "",
     dialog: dialog.base(),
     error: "",
     s: {},
@@ -44,6 +47,10 @@ Page({
         noticeNoUpload: strings.t("submission_notice_no_upload"),
         scopeAll: strings.t("mp_submissions_scope_all"),
         scopeMine: strings.t("mp_submissions_scope_mine"),
+        showHiddens: strings.t("mp_submissions_show_hiddens"),
+        hideHiddens: strings.t("mp_submissions_hide_hiddens"),
+        tabAll: strings.t("mp_submissions_tab_all"),
+        tabsLabel: strings.t("mp_submissions_tabs_label"),
         myTitle: strings.t("mp_my_submissions_title"),
         myEmpty: strings.t("mp_my_submissions_empty"),
       },
@@ -56,9 +63,13 @@ Page({
     var ctx = this.data.ctx;
     if (!ctx) return;
     this.setData({ loading: true, error: "" });
-    var request = this.data.scope === "mine" && ctx.staff
+    var mine = this.data.scope === "mine" && ctx.staff;
+    var request = mine
       ? works.mySubmissions(ctx.key)
-      : works.submissions(ctx.key);
+      : works.submissions(ctx.key, {
+          showHiddens: this.data.showHiddens,
+          category: this.data.activeTab,
+        });
     request
       .then(function (res) {
         if (!res.ok) {
@@ -69,9 +80,18 @@ Page({
         var rows = (res.datas || []).map(function (row) {
           return view.decorateSubmission(row, { pageRole: ctx.pageRole, now: now });
         });
+        var tabs = (res.tabs || []).map(function (tab) {
+          return {
+            name: tab.name,
+            displayName: tab.displayName || tab.name,
+            count: tab.count || 0,
+            active: (tab.name || "") === self.data.activeTab,
+          };
+        });
         self.setData({
           loading: false,
           rows: rows,
+          tabs: mine ? [] : tabs,
           total: rows.length,
           countText: strings.S("submissions_page_sub", rows.length, strings.t(
             ctx.staff ? "submissions_unit_class" : ctx.parent ? "submissions_unit_child" : "submissions_unit_person"
@@ -105,7 +125,19 @@ Page({
   onScope: function (e) {
     var scope = e.currentTarget.dataset.scope === "mine" ? "mine" : "all";
     if (scope === this.data.scope) return;
-    this.setData({ scope: scope });
+    this.setData({ scope: scope, activeTab: "" });
+    this.load();
+  },
+
+  onToggleHiddens: function () {
+    this.setData({ showHiddens: !this.data.showHiddens });
+    this.load();
+  },
+
+  onTab: function (e) {
+    var name = e.currentTarget.dataset.tab || "";
+    if (name === this.data.activeTab) return;
+    this.setData({ activeTab: name });
     this.load();
   },
 

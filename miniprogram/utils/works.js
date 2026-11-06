@@ -72,15 +72,25 @@ function pendingUploads(authKey, options) {
   });
 }
 
-/** `/api/all-submission`：征集列表（已是服务端排序） */
-function submissions(authKey, matchMode) {
+/** `/api/all-submission`：征集列表（已是服务端排序）。
+ *  第二个参数可以是 MatchMode，也可以是 `{matchMode, showHiddens, category}`。 */
+function submissions(authKey, options) {
+  var opts = {};
+  if (options && typeof options === "object") {
+    opts = options;
+  } else if (options !== undefined) {
+    opts.matchMode = options;
+  }
   var body = { auth: authKey };
-  if (matchMode !== undefined) body.match_mode = matchMode;
+  if (opts.matchMode !== undefined) body.match_mode = opts.matchMode;
+  if (opts.showHiddens) body["show-hiddens"] = true;
+  if (opts.category) body.category = opts.category;
   return api.allSubmission(body);
 }
 
 function findSubmission(authKey, submissionId) {
-  return submissions(authKey).then(function (res) {
+  // 按 ID 直接读取：隐藏 / 不显示征集也能打开详情（仍由服务端校验角色）。
+  return api.allSubmission({ auth: authKey, submissionID: submissionId }).then(function (res) {
     if (!res.ok) return { ok: false, msg: res.msg, status: res.status };
     var list = res.datas || [];
     for (var i = 0; i < list.length; i++) {

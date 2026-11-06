@@ -72,8 +72,11 @@ pub async fn upload(State(st): State<AppState>, Json(req): Json<UploadReq>) -> R
     };
 
     let db = st.db.lock().unwrap();
-    match db::submission_meta(&db, &req.which) {
-        Some((class_id, kind, form_desc)) if class_id == auth.class_id => {
+    match db::submission_meta_access(&db, &req.which) {
+        Some((class_id, kind, form_desc, flags)) if class_id == auth.class_id => {
+            if !flags.can_view(&auth.role) {
+                return api_not_found("submission not found");
+            }
             if kind.trim().eq_ignore_ascii_case("notice") {
                 return api_forbidden("uploads are disabled for notice submissions");
             }
@@ -113,8 +116,12 @@ pub async fn download(State(st): State<AppState>, Json(req): Json<DownloadReq>) 
     };
 
     let db = st.db.lock().unwrap();
-    match db::submission_class_id(&db, &req.which) {
-        Some(c) if c == auth.class_id => {}
+    match db::submission_access(&db, &req.which) {
+        Some((c, flags)) if c == auth.class_id => {
+            if !flags.can_view(&auth.role) {
+                return api_not_found("submission not found");
+            }
+        }
         Some(_) => return api_not_found("submission does not belong to the current class"),
         None => return api_not_found("submission not found"),
     }
@@ -198,12 +205,19 @@ fn upload_json(db: &rusqlite::Connection, row: &UploadRow) -> Value {
 }
 
 fn submission_json(row: &SubmissionRow) -> Value {
-    json!({
+    let display_name = if row.display_name.trim().is_empty() {
+        row.kind.clone()
+    } else {
+        row.display_name.clone()
+    };
+    let mut value = json!({
         "id": row.id,
         "name": row.name,
         "desc": row.desc,
         "deadLine": row.deadline.map(fmt_iso),
         "type": row.kind,
+        "displayName": display_name,
+        "typeDisplayName": display_name,
         "baseType": row.effective_kind(),
         "createdAt": fmt_iso(row.created_at),
         "createdBy": row.created_name,
@@ -212,7 +226,31 @@ fn submission_json(row: &SubmissionRow) -> Value {
         "myUploadCount": row.my_upload_count,
         "pendingCount": row.pending_count,
         "latestUploadID": row.last_upload_id,
-    })
+        "hidden": row.flags.hidden,
+        "teacherOnly": row.flags.teacher_only,
+        "adminOnly": row.flags.admin_only,
+        "invisible": row.flags.invisible,
+        "separateList": row.flags.separate_list,
+        "abstract": row.flags.abstract_mode,
+        "visibility": crate::types::visibility_name(&row.flags),
+        "inheritModes": row.mode_ancestors,
+    });
+    if let Some(map) = value.as_object_mut() {
+        map.insert("flags".to_string(), row.flags.to_json());
+    }
+    value
+}
+
+fn truthy_value(value: Option<&Value>) -> bool {
+    match value {
+        Some(Value::Bool(v)) => *v,
+        Some(Value::Number(n)) => n.as_i64().map(|n| n != 0).unwrap_or(false),
+        Some(Value::String(s)) => matches!(
+            s.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on" | "show"
+        ),
+        _ => false,
+    }
 }
 
 fn limit_or(value: Option<i64>, default: i64, max: i64) -> i64 {
@@ -378,33 +416,31 @@ pub async fn pending_uploads(
 // 征集模式：/api/new-mode、/api/all-modes
 // ---------------------------------------------------------------------------
 
-fn builtin_mode_json(name: &str) -> Value {
-    json!({
-        "id": format!("builtin_{}", name.replace(' ', "_")),
-        "name": name,
-        "modeName": name,
-        "baseType": name,
-        "extendModes": [],
-        "builtin": true,
-    })
-}
-
 pub async fn all_modes(State(st): State<AppState>, Json(req): Json<AllModesReq>) -> Response {
     let auth = match require_auth(&st, &req.auth) {
         Ok(a) => a,
         Err(r) => return r,
     };
     let db = st.db.lock().unwrap();
-    let mut modes: Vec<Value> = db::BUILTIN_MODES
+    let modes: Vec<Value> = db::list_mode_infos(&db, &auth.class_id)
         .iter()
-        .map(|name| builtin_mode_json(name))
+        .map(|m| m.to_json())
         .collect();
-    modes.extend(
-        db::list_class_modes(&db, &auth.class_id)
-            .iter()
-            .map(|m| m.to_json()),
-    );
-    api_ok(json!({ "ok": true, "modes": modes, "datas": modes }))
+    let tabs: Vec<Value> = modes
+        .iter()
+        .filter(|m| {
+            m["separateList"].as_bool().unwrap_or(false)
+                && !m["abstract"].as_bool().unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+    api_ok(json!({
+        "ok": true,
+        "modes": modes.clone(),
+        "datas": modes,
+        "tabs": tabs.clone(),
+        "separateLists": tabs,
+    }))
 }
 
 pub async fn new_mode(State(st): State<AppState>, Json(req): Json<NewModeReq>) -> Response {
@@ -416,15 +452,34 @@ pub async fn new_mode(State(st): State<AppState>, Json(req): Json<NewModeReq>) -
         return api_forbidden("only admins can add submission modes");
     }
     let db = st.db.lock().unwrap();
-    match db::create_class_mode(&db, &auth, &req.mode_name, &req.extend_modes) {
+    let options = db::ModeCreateOptions {
+        display_name: req.display_name.clone(),
+        // 可见性必须通过 extendModes 继承；仅抽象属性可显式声明。
+        abstract_mode: req.abstract_mode,
+    };
+    match db::create_class_mode_with_options(
+        &db,
+        &auth,
+        &req.mode_name,
+        &req.extend_modes,
+        &options,
+    ) {
         Ok(mode) => api_ok(json!({
             "ok": true,
             "success": true,
             "id": mode.id,
             "modeName": mode.name,
+            "displayName": mode.effective_display_name(),
             "extends": mode.extend_modes,
             "extendModes": mode.extend_modes,
             "baseType": mode.base_type,
+            "hidden": mode.flags.hidden,
+            "teacherOnly": mode.flags.teacher_only,
+            "adminOnly": mode.flags.admin_only,
+            "invisible": mode.flags.invisible,
+            "separateList": mode.flags.separate_list,
+            "abstract": mode.flags.abstract_mode,
+            "flags": mode.flags.to_json(),
             "createdAt": fmt_iso(mode.created_at),
             "createdBy": mode.created_name,
         })),
@@ -445,7 +500,41 @@ pub async fn all_submission(
         Err(e) => return api_bad(e),
     };
     let db = st.db.lock().unwrap();
-    let mut rows: Vec<SubmissionRow> = db::list_submissions(&db, &auth, i64::MAX, false);
+    let show_hiddens = truthy_value(req.show_hiddens.as_ref());
+    let category = req
+        .category
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    // 按征集 ID 直接读取：隐藏 / 不显示征集也能取到（仅按角色可见性校验）。
+    if let Some(id) = req
+        .submission_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let Some(row) = db::load_submission(&db, &auth, id) else {
+            return api_not_found("submission not found");
+        };
+        let tabs =
+            db::separate_mode_tabs(&db, &auth.class_id, std::slice::from_ref(&row), &auth.role);
+        let tab_values: Vec<Value> = tabs.iter().map(|tab| tab.to_json()).collect();
+        return api_ok(json!({
+            "ok": true,
+            "datas": vec![submission_json(&row)],
+            "tabs": tab_values.clone(),
+            "separateLists": tab_values,
+            "showHiddens": show_hiddens,
+            "category": category,
+            "direct": true,
+        }));
+    }
+    let mut rows: Vec<SubmissionRow> =
+        db::list_submissions_visible(&db, &auth, i64::MAX, false, show_hiddens);
+    let tabs = db::separate_mode_tabs(&db, &auth.class_id, &rows, &auth.role);
+    if let Some(category) = category {
+        db::filter_submissions_category(&db, &auth.class_id, &mut rows, category);
+    }
 
     match mode {
         MatchMode::All => {}
@@ -478,7 +567,15 @@ pub async fn all_submission(
     }
 
     let datas: Vec<Value> = rows.iter().map(submission_json).collect();
-    api_ok(json!({ "ok": true, "datas": datas }))
+    let tab_values: Vec<Value> = tabs.iter().map(|tab| tab.to_json()).collect();
+    api_ok(json!({
+        "ok": true,
+        "datas": datas,
+        "tabs": tab_values.clone(),
+        "separateLists": tab_values,
+        "showHiddens": show_hiddens,
+        "category": category,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -524,20 +621,53 @@ pub async fn new_submission(
     let db = st.db.lock().unwrap();
     // 内置模式或班级自定义模式：自定义模式用 baseType 决定问卷 / 答题卡 / 公示等行为。
     let mode = db::resolve_mode(&db, &auth.class_id, &kind);
-    let (kind, base_kind) = match mode {
-        Some(m) => (m.name, m.base_type),
-        None => (kind, "other".to_string()),
+    let (kind, base_kind, mut flags) = match mode {
+        Some(m) => {
+            if m.flags.abstract_mode {
+                return api_bad(format!(
+                    "submission mode is abstract and cannot be used directly: {}",
+                    m.name
+                ));
+            }
+            if !m.flags.can_publish(&auth.role) {
+                return api_forbidden(format!(
+                    "submission mode requires a different role: {}",
+                    m.name
+                ));
+            }
+            (m.name, m.base_type, m.flags)
+        }
+        None => (
+            kind,
+            "other".to_string(),
+            crate::types::ModeFlags::default(),
+        ),
     };
+    // 单条征集的可见性覆盖（可选）。
+    flags.hidden |= req.hidden;
+    flags.teacher_only |= req.teacher_only;
+    flags.admin_only |= req.admin_only;
+    flags.invisible |= req.invisible;
+    if flags.admin_only && !auth.is_admin() {
+        return api_forbidden("admin-only submissions can only be published by admins");
+    }
     // 答题卡：简介里必须至少有一道带 id / data-answer / data-score 的题目。
     if let Some(err) = crate::survey::validate_definition(&base_kind, &desc) {
         return api_bad(err);
     }
-    match db::insert_submission_mode(&db, &auth, &name, &desc, &kind, &base_kind, deadline) {
+    match db::insert_submission_mode_flags(
+        &db, &auth, &name, &desc, &kind, &base_kind, deadline, &flags,
+    ) {
         Ok(id) => api_ok(json!({
             "ok": true,
             "id": id,
             "type": kind,
             "baseType": base_kind,
+            "hidden": flags.hidden,
+            "teacherOnly": flags.teacher_only,
+            "adminOnly": flags.admin_only,
+            "invisible": flags.invisible,
+            "flags": flags.to_json(),
         })),
         Err(e) => crate::tools::api_err(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,

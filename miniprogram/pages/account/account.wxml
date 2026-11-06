@@ -175,9 +175,20 @@
         <input class="input" value="{{modeForm.name}}" placeholder="{{s.modeNameLabel}}" bindinput="onModeName" maxlength="60" />
       </view>
       <view class="field">
+        <view class="label">{{s.modeDisplayNameLabel}}</view>
+        <input class="input" value="{{modeForm.displayName}}" placeholder="{{s.modeDisplayNameLabel}}" bindinput="onModeDisplayName" maxlength="60" />
+      </view>
+      <view class="field">
         <view class="label">{{s.modeExtendsLabel}}</view>
         <input class="input" value="{{modeForm.extends}}" placeholder="{{s.modeExtendPlaceholder}}" bindinput="onModeExtends" maxlength="400" />
         <view class="hint">{{s.modeHint}}</view>
+      </view>
+      <view class="field">
+        <view class="label">{{s.modeAbstract}}</view>
+        <view class="check-line" bindtap="onModeAbstract">
+          <view class="checkbox {{modeForm.abstract ? 'on' : ''}}">{{modeForm.abstract ? '✓' : ''}}</view>
+        </view>
+        <view class="hint">{{s.modeAbstractHint}}</view>
       </view>
       <view class="btn-row">
         <view class="btn ghost block" bindtap="onAddMode">{{s.modeCreate}}</view>

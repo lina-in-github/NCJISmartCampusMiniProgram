@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS submissions (
     -- 自定义征集模式的行为基类（如 survey / answer sheet / notice）。
     -- 为空时直接使用 type，兼容旧数据库与内置模式。
     base_type    TEXT,
+    -- 单条征集的可见性覆盖（与模式属性取并集）。
+    hidden       INTEGER NOT NULL DEFAULT 0,
+    teacher_only INTEGER NOT NULL DEFAULT 0,
+    admin_only   INTEGER NOT NULL DEFAULT 0,
+    invisible    INTEGER NOT NULL DEFAULT 0,
     deadline     INTEGER,
     created_at   INTEGER NOT NULL,
     created_by   TEXT,
@@ -68,8 +73,17 @@ CREATE TABLE IF NOT EXISTS class_modes (
     class_id     TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
     name         TEXT NOT NULL,
     normalized   TEXT NOT NULL,
+    -- 面向用户的显示名称（支持中文）；为空时回退到 name。
+    display_name TEXT NOT NULL DEFAULT '',
     extend_modes TEXT NOT NULL DEFAULT '[]',
     base_type    TEXT NOT NULL DEFAULT 'other',
+    -- 可见性 / 列表属性（可被继承；abstract 不继承）。
+    hidden       INTEGER NOT NULL DEFAULT 0,
+    teacher_only INTEGER NOT NULL DEFAULT 0,
+    admin_only   INTEGER NOT NULL DEFAULT 0,
+    invisible    INTEGER NOT NULL DEFAULT 0,
+    separate_list INTEGER NOT NULL DEFAULT 0,
+    abstract_mode INTEGER NOT NULL DEFAULT 0,
     created_at   INTEGER NOT NULL,
     created_by   TEXT,
     created_name TEXT NOT NULL DEFAULT ''

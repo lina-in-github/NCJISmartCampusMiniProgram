@@ -9,7 +9,7 @@ use crate::tools::{
     parse_attachment, role_label, truncate_chars,
 };
 use crate::types::{
-    AuthCtx, ClassModeRow, Prefs, ReplyRow, Session, SubmissionRow, UploadRow, UserCtx,
+    AuthCtx, ClassModeRow, ModeTab, Prefs, ReplyRow, Session, SubmissionRow, UploadRow, UserCtx,
 };
 
 // ---------------------------------------------------------------------------
@@ -225,8 +225,11 @@ fn type_label(kind: &str) -> String {
     }
 }
 
-/// 自定义模式：显示班级里定义的模式名；内置模式走原有本地化标签。
+/// 模式显示名称：优先使用 API / 模式表里的「显示名称」（支持中文）。
 fn submission_type_label(row: &SubmissionRow) -> String {
+    if !row.display_name.trim().is_empty() {
+        return truncate_chars(&row.display_name, 24);
+    }
     let base = row.base_kind.as_deref().unwrap_or("");
     if !base.trim().is_empty()
         && crate::db::normalize_mode_name(&row.kind) != crate::db::normalize_mode_name(base)
@@ -235,6 +238,35 @@ fn submission_type_label(row: &SubmissionRow) -> String {
     } else {
         type_label(&row.kind)
     }
+}
+
+/// 征集可见性标签（隐藏 / 仅教师 / 仅管理员 / 不显示）。
+fn submission_flag_badges(row: &SubmissionRow) -> String {
+    let mut out = String::new();
+    let chip = |key: &str, tone: &str| {
+        format!(
+            r#"<span class="chip {tone}">{}</span>"#,
+            esc(&crate::strings::t(key))
+        )
+    };
+    if row.flags.abstract_mode {
+        out.push_str(&chip("submission_flag_abstract", "warn"));
+    }
+    if row.flags.invisible {
+        out.push_str(&chip("submission_flag_invisible", "danger"));
+    }
+    if row.flags.admin_only {
+        out.push_str(&chip("submission_flag_admin_only", "danger"));
+    } else if row.flags.teacher_only {
+        out.push_str(&chip("submission_flag_teacher_only", "warn"));
+    }
+    if row.flags.hidden {
+        out.push_str(&chip("submission_flag_hidden", "warn"));
+    }
+    if row.flags.separate_list && !row.flags.abstract_mode {
+        out.push_str(&chip("submission_flag_separate_list", "pinned"));
+    }
+    out
 }
 
 pub fn role_class(role: &str) -> &'static str {
@@ -837,6 +869,7 @@ fn submission_card_link(
   <a class="card-link" href="{href}" aria-label="@[strings/common_open]@[strings/type_generic] {name}"></a>
   <div class="submission-top">
     <span class="chip type">{type_label}</span>
+    {flags}
     {pin}
     {deadline}
   </div>
@@ -850,6 +883,7 @@ fn submission_card_link(
         href = esc(&href),
         name = esc(&row.name),
         type_label = esc(&submission_type_label(row)),
+        flags = submission_flag_badges(row),
         pin = notice_pin_badge(row, now),
         deadline = deadline_badge(row.deadline, now),
         desc = desc,
@@ -923,6 +957,7 @@ fn submission_card_manage(
         r#"<article class="card submission-card">
   <div class="submission-top">
     <span class="chip type">{type_label}</span>
+    {flags}
     {mine_chip}
     {pin}
     {deadline}
@@ -940,6 +975,7 @@ fn submission_card_manage(
   </div>
 </article>"#,
         type_label = esc(&submission_type_label(row)),
+        flags = submission_flag_badges(row),
         mine_chip = mine_chip,
         pin = notice_pin_badge(row, now),
         deadline = deadline_badge(row.deadline, now),
@@ -1194,9 +1230,30 @@ pub fn home(
     layout(ctx, &body)
 }
 
+fn submissions_href(base: &str, mine: bool, tab: Option<&str>, show_hiddens: bool) -> String {
+    let mut query: Vec<String> = Vec::new();
+    if mine {
+        query.push("scope=mine".to_string());
+    }
+    if let Some(tab) = tab.map(str::trim).filter(|s| !s.is_empty()) {
+        query.push(format!("tab={}", crate::tools::url_encode(tab)));
+    }
+    if show_hiddens {
+        query.push("show-hiddens=1".to_string());
+    }
+    if query.is_empty() {
+        format!("{base}submissions/")
+    } else {
+        format!("{base}submissions/?{}", query.join("&"))
+    }
+}
+
 pub fn submissions(
     ctx: &LayoutCtx,
     rows: &[SubmissionRow],
+    tabs: &[ModeTab],
+    active_tab: Option<&str>,
+    show_hiddens: bool,
     staff: bool,
     admin: bool,
     parent: bool,
@@ -1216,15 +1273,53 @@ pub fn submissions(
     let scope_tabs = if staff {
         format!(
             r#"<div class="segmented" role="tablist">
-  <a class="segment{all}" href="{base}submissions/">@[strings/common_view_all]</a>
-  <a class="segment{mine}" href="{base}submissions/?scope=mine">@[strings/submissions_scope_mine]</a>
+  <a class="segment{all}" href="{all_href}">@[strings/common_view_all]</a>
+  <a class="segment{mine}" href="{mine_href}">@[strings/submissions_scope_mine]</a>
 </div>"#,
             all = if mine { "" } else { " active" },
             mine = if mine { " active" } else { "" },
-            base = base
+            all_href = submissions_href(&base, false, active_tab, show_hiddens),
+            mine_href = submissions_href(&base, true, active_tab, show_hiddens)
         )
     } else {
         String::new()
+    };
+    // 「显示隐藏」勾选项：打开后把 hidden 征集加入全部征集列表。
+    let toggle_label = if show_hiddens {
+        "@[strings/submissions_hide_hiddens]"
+    } else {
+        "@[strings/submissions_show_hiddens]"
+    };
+    let toggle = format!(
+        r#"<a class="chip toggle{active}" href="{href}" role="checkbox" aria-checked="{checked}"><span class="toggle-check" aria-hidden="true">✓</span>{label}</a>"#,
+        active = if show_hiddens { " active" } else { "" },
+        href = esc(&submissions_href(&base, mine, active_tab, !show_hiddens)),
+        checked = if show_hiddens { "true" } else { "false" },
+        label = toggle_label
+    );
+    let category_tabs = if tabs.is_empty() {
+        String::new()
+    } else {
+        let mut items = format!(
+            r#"<a class="segment{active}" href="{href}">@[strings/submissions_tab_all]</a>"#,
+            active = if active_tab.is_none() { " active" } else { "" },
+            href = esc(&submissions_href(&base, mine, None, show_hiddens))
+        );
+        for tab in tabs {
+            let is_active = active_tab
+                .is_some_and(|active| crate::db::normalize_mode_name(active) == tab.normalized);
+            items.push_str(&format!(
+                r#"<a class="segment{active}" href="{href}" title="{title}">{name}<span class="segment-count">{count}</span></a>"#,
+                active = if is_active { " active" } else { "" },
+                href = esc(&submissions_href(&base, mine, Some(&tab.name), show_hiddens)),
+                title = esc(&tab.display_name),
+                name = esc(&tab.display_name),
+                count = tab.count
+            ));
+        }
+        format!(
+            r#"<div class="segmented segmented-wrap" role="tablist" aria-label="@[strings/submissions_tabs_label]">{items}</div>"#
+        )
     };
     let content = if rows.is_empty() {
         format!(
@@ -1279,8 +1374,9 @@ pub fn submissions(
     <h2 class="page-title">{title}</h2>
     <p class="page-sub">{page_sub}</p>
   </div>
-  <div class="page-actions">{scope_tabs}{new_btn}</div>
+  <div class="page-actions">{scope_tabs}{toggle}{new_btn}</div>
 </div>
+{category_tabs}
 {content}"#,
         title = if mine {
             "@[strings/submissions_page_title_mine]"
@@ -1289,7 +1385,9 @@ pub fn submissions(
         },
         page_sub = page_sub,
         scope_tabs = scope_tabs,
+        toggle = toggle,
         new_btn = new_btn,
+        category_tabs = category_tabs,
         content = content
     );
     layout(ctx, &body)
@@ -1298,17 +1396,25 @@ pub fn submissions(
 pub fn new_submission(ctx: &LayoutCtx, modes: &[ClassModeRow]) -> String {
     let base = ctx.base();
     let default_deadline = fmt_datetime_local(crate::tools::now_ts() + 3 * 86_400 + 12 * 3600);
+    let is_admin = ctx.role == "admin";
     // 班级自定义模式：作为额外的 optgroup 交给发布表单，值就是模式名。
-    let mode_options: String = if modes.is_empty() {
+    // 抽象类别不能直接发布；仅管理员类别在教师视角下不展示。
+    let published_modes: Vec<&ClassModeRow> = modes
+        .iter()
+        .filter(|m| !m.flags.abstract_mode)
+        .filter(|m| is_admin || !m.flags.admin_only)
+        .collect();
+    let mode_options: String = if published_modes.is_empty() {
         String::new()
     } else {
-        let opts: String = modes
+        let opts: String = published_modes
             .iter()
             .map(|m| {
                 format!(
-                    r#"<option value="{name}" data-base-type="{base_type}">{name}</option>"#,
+                    r#"<option value="{name}" data-base-type="{base_type}">{label}</option>"#,
                     name = esc(&m.name),
-                    base_type = esc(&m.base_type)
+                    base_type = esc(&m.base_type),
+                    label = esc(&m.effective_display_name())
                 )
             })
             .collect();
@@ -1317,14 +1423,34 @@ pub fn new_submission(ctx: &LayoutCtx, modes: &[ClassModeRow]) -> String {
             esc(&crate::strings::t("new_mode_group"))
         )
     };
-    let mode_hint = if modes.is_empty() {
-        String::new()
-    } else {
-        format!(
-            r#"<span class="hint">{}</span>"#,
-            esc(&crate::strings::f1("new_mode_hint", modes.len()))
-        )
-    };
+    // 内置可见性类别（隐藏 / 仅教师 / 仅管理员 / 不显示）；「单独列出」是抽象类别，只能继承。
+    let mut special_modes: Vec<(&str, &str)> = vec![
+        ("hidden", "type_hidden"),
+        ("teacher only", "type_teacher_only"),
+        ("admin only", "type_admin_only"),
+        ("invisible", "type_invisible"),
+    ];
+    if !is_admin {
+        special_modes.retain(|(name, _)| *name != "admin only");
+    }
+    let special_options: String = special_modes
+        .iter()
+        .map(|(value, key)| {
+            format!(
+                r#"<option value="{value}" data-base-type="other">{label}</option>"#,
+                value = esc(value),
+                label = esc(&crate::strings::t(key))
+            )
+        })
+        .collect();
+    let special_group = format!(
+        r#"<optgroup label="{}">{special_options}</optgroup>"#,
+        esc(&crate::strings::t("new_mode_group_special"))
+    );
+    let mode_hint = format!(
+        r#"<span class="hint">{}</span>"#,
+        esc(&crate::strings::t("new_mode_hint_special"))
+    );
     let body = format!(
         include_str!("./views/new_submission.html"),
         base = base,
@@ -1336,7 +1462,8 @@ pub fn new_submission(ctx: &LayoutCtx, modes: &[ClassModeRow]) -> String {
         class_name = esc(&ctx.class_name),
         role = esc(&role_label(&ctx.role)),
         mode_options = mode_options,
-        mode_hint = mode_hint
+        mode_hint = mode_hint,
+        special_group = special_group
     );
     layout(ctx, &body)
 }

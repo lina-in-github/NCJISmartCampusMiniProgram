@@ -174,7 +174,7 @@ Page({
   },
 
   onToggleSwitch: function (e) {
-    surveyForm.setSwitch(this, e.currentTarget.dataset.dom, e.detail.value);
+    surveyForm.toggleBox(this, e.currentTarget.dataset.dom);
   },
 
   onSubmitSurvey: function () {

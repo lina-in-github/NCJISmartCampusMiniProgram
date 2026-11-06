@@ -6,6 +6,7 @@
     </view>
     <view class="topbar-actions">
       <view class="icon-btn" wx:if="{{ctx.staff}}" bindtap="onPublish">{{s.publish}}</view>
+      <view class="icon-btn {{showHiddens ? 'accent-text' : ''}}" bindtap="onToggleHiddens">{{showHiddens ? s.hideHiddens : s.showHiddens}}</view>
       <view class="icon-btn" bindtap="onToggleTheme">◐</view>
     </view>
   </view>
@@ -13,6 +14,11 @@
   <view class="tabs" wx:if="{{ctx.staff}}">
     <view class="tab {{scope === 'all' ? 'active' : ''}}" data-scope="all" bindtap="onScope">{{s.scopeAll}}</view>
     <view class="tab {{scope === 'mine' ? 'active' : ''}}" data-scope="mine" bindtap="onScope">{{s.scopeMine}}</view>
+  </view>
+
+  <view class="tabs" wx:if="{{scope === 'all' && tabs.length}}">
+    <view class="tab {{activeTab ? '' : 'active'}}" data-tab="" bindtap="onTab">{{s.tabAll}}</view>
+    <view class="tab {{item.active ? 'active' : ''}}" wx:for="{{tabs}}" wx:key="name" data-tab="{{item.name}}" bindtap="onTab">{{item.displayName}}</view>
   </view>
 
   <view class="notice danger" wx:if="{{error}}">{{error}}</view>
@@ -34,6 +40,7 @@
         </view>
         <view class="chip-row">
           <view class="chip">{{item.typeText}}</view>
+          <view class="chip warn" wx:for="{{item.flagTexts}}" wx:key="*this" wx:for-item="flag">{{flag}}</view>
           <view class="chip pinned" wx:if="{{item.pinned}}">{{s.noticePinned}}</view>
           <view class="chip">{{item.countText}}</view>
           <view class="chip warn" wx:if="{{ctx.staff && item.pendingCount}}">{{item.pendingText}}</view>

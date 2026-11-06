@@ -395,12 +395,18 @@ page {
   color: var(--danger);
 }
 
-.switch-row {
+.check-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
   padding: 18rpx 0;
+}
+
+.check-line {
+  display: flex;
+  align-items: center;
+  padding: 8rpx 0;
 }
 
 .option-row {

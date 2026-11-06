@@ -316,7 +316,11 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
   "name": "函数与导数 · 周末练习",
   "desc": "完成练习册 P42–P45，拍照上传。",
   "type": "homework",
-  "deadLine": "2026-11-01T20:00"
+  "deadLine": "2026-11-01T20:00",
+  "hidden": false,
+  "teacherOnly": false,
+  "adminOnly": false,
+  "invisible": false
 }
 ```
 
@@ -325,13 +329,29 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 | `auth` | string | ✅ | 老师/管理员密钥 |
 | `name` | string | ✅ | 征集名称，≤200 字 |
 | `desc` | string | — | 说明，≤2000 字 |
-| `type` | string | — | 例：`homework`、`open call`、`leave request`、`survey`（问卷）、`answer sheet`（答题卡）、`notice`，缺省 `homework` |
+| `type` | string | — | 模式名；例：`homework`、`open call`、`leave request`、`survey`（问卷）、`answer sheet`（答题卡）、`notice`，缺省 `homework`；也可传 `hidden`、`teacher only`、`admin only`、`invisible` 或班级自定义模式 |
 | `deadLine` | string / number / null | — | 截止时间 |
+| `hidden` | bool | — | 单条征集隐藏（打开 `show-hiddens` 后可见） |
+| `teacherOnly` | bool | — | 单条征集仅教师可见 |
+| `adminOnly` | bool | — | 单条征集仅管理员可见 |
+| `invisible` | bool | — | 单条征集不显示（只能按 ID 直接访问） |
+
+单条覆盖属性与模式属性取并集。抽象类别（如内置 `separate list`）不能直接发布，返回 `400`；
+`adminOnly` 模式只有管理员可以发布。响应除 `id` 外还返回 `type` / `baseType` 与最终可见性字段。
 
 ### 响应
 
 ```json
-{ "ok": true, "id": "sub_xxxxxxxxxxxx" }
+{
+  "ok": true,
+  "id": "sub_xxxxxxxxxxxx",
+  "type": "homework",
+  "baseType": "homework",
+  "hidden": false,
+  "teacherOnly": false,
+  "adminOnly": false,
+  "invisible": false
+}
 ```
 
 ---
@@ -345,12 +365,21 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 ```json
 {
   "auth": "SC-STU-DEMO-2026",
-  "match_mode": "All"
+  "match_mode": "All",
+  "show-hiddens": false,
+  "category": "每周汇报",
+  "submissionID": null
 }
 ```
 
 - `match_mode` 可选，缺省 `All`。
+- `submissionID`（也接受 `id` / `which`）按征集 ID 直接读取，返回单个元素的 `datas`；
+  即使征集是隐藏 / 不显示也能读取（仍按角色校验：教师不能读取仅管理员征集）。
 - 支持的匹配：`All`、`Random`、`StudentID`、`ShortStudentID`、`TitleReGex`（作用于征集名称）、`Before`（作用于截止时间）。`StudentID` / `ShortStudentID` 返回该学生提交过的征集。
+- `show-hiddens`（也接受 `showHiddens` / `show_hiddens`）为 `true` 时，隐藏征集才会出现在列表中；
+  不显示征集（`invisible`）即使打开该开关也不会出现。
+- `category`（也接受 `tab`）按「单独列出」类别筛选，可传模式名或中文显示名称；
+  结果为该类别及其所有子类别下的征集。
 
 ### 响应
 
@@ -364,7 +393,17 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
       "desc": "完成练习册 P42–P45，拍照上传。",
       "deadLine": "2026-11-01T20:00:00+08:00",
       "type": "homework",
+      "displayName": "作业",
+      "typeDisplayName": "作业",
       "baseType": "homework",
+      "hidden": false,
+      "teacherOnly": false,
+      "adminOnly": false,
+      "invisible": false,
+      "separateList": false,
+      "abstract": false,
+      "visibility": "normal",
+      "inheritModes": ["homework"],
       "createdAt": "2026-10-20T10:00:00+08:00",
       "createdBy": "林书言",
       "createdByID": "auth_xxxxxxxxxxxx",
@@ -373,7 +412,21 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
       "pendingCount": 1,
       "latestUploadID": "up_xxxxxxxxxxxx"
     }
-  ]
+  ],
+  "tabs": [
+    {
+      "id": "mode_xxxxxxxxxxxx",
+      "name": "weekly report",
+      "modeName": "weekly report",
+      "displayName": "每周汇报",
+      "normalized": "weekly report",
+      "count": 2,
+      "separateList": true
+    }
+  ],
+  "separateLists": ["与 tabs 相同"],
+  "showHiddens": false,
+  "category": null
 }
 ```
 
@@ -382,6 +435,14 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 - `deadLine` 可能为 `null`。
 - `baseType` 是征集的实际行为类型：内置模式与 `type` 相同；班级自定义模式返回它继承的基类
   （例如 `"type": "maths multiple-choise homework"`、`"baseType": "answer sheet"`）。
+- `displayName` / `typeDisplayName` 是模式的显示名称（内置模式为中文 UI 文案，自定义模式取创建时的
+  `displayName`），可直接用于列表标签。
+- 可见性字段：`hidden`、`teacherOnly`、`adminOnly`、`invisible`、`separateList`、`abstract`；
+  `visibility` 是 `normal` / `hidden` / `teacher_only` / `admin_only` / `invisible` 之一。
+  列表结果已按当前 `auth` 的角色与 `show-hiddens` 过滤；按 ID 直接调用见 `/api/download`。
+- `inheritModes` 是模式继承链（含自身，规范化名称），便于客户端做分类聚合。
+- `tabs` 列出所有继承「单独列出征集」的具体类别（不包含抽象基类自身），每个标签页的 `count`
+  是该类别及其子类别下当前可见的征集数；`displayName` 支持中文。
 - `createdByID` 是发布者 auth ID，便于客户端判断「是不是我发布的」。
 - 时间状态由页面根据 `deadLine` 计算，API 不再返回展示文案。
 - 截至截止时间的 `notice` 公示版会排在普通征集之前；未设置截止时间的公示版同样置顶。
@@ -499,7 +560,9 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 {
   "auth": "SC-ADM-DEMO-2026",
   "modeName": "maths multiple-choise homework",
-  "extendModes": ["homework", "answer sheet"]
+  "displayName": "数学选择题作业",
+  "extendModes": ["homework", "answer sheet"],
+  "abstract": false
 }
 ```
 
@@ -507,9 +570,38 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 | --- | --- | --- | --- |
 | `auth` | string | ✅ | 管理员密钥 |
 | `modeName` | string | ✅ | 模式名称，1–60 字，不能包含控制字符 |
-| `extendModes` | string[] | — | 继承的内置模式或本班已有自定义模式，最多 16 项 |
+| `displayName` | string | — | 显示名称（支持中文），最多 60 字；缺省使用 `modeName` |
+| `extendModes` | string[] | — | 继承的内置模式或本班已有自定义模式，最多 16 项；**可见性也在这里定义** |
+| `abstract` | bool | — | 抽象类别：不能直接发布，只能被继承（抽象属性不继承，是唯一需要显式声明的属性） |
+
+> v0.1.11 起，可见性不再通过 `hidden` / `teacherOnly` / `adminOnly` / `invisible` /
+> `separateList` 字段单独声明，而是把对应内置模式写入 `extendModes`。旧的可见性字段会被忽略。
 
 `extendModes` 可继承：`homework`、`open call`、`leave request`、`survey`、`answer sheet`、`notice`、`other`，以及本班已经定义的自定义模式。行为基类按「答题卡 > 问卷 > 公示 > 作业 > 公开征集 > 请假 > 其他」的顺序确定。
+
+可见性类别同样作为父模式写在 `extendModes` 中：
+
+| 模式名 | 含义 |
+| --- | --- |
+| `hidden` | 隐藏征集 |
+| `teacher only` | 仅教师征集 |
+| `admin only` | 仅管理员征集 |
+| `invisible` | 不显示征集 |
+| `separate list` | 单独列出征集（抽象类别，只能继承） |
+
+例如：
+
+```json
+{
+  "auth": "SC-ADM-DEMO-2026",
+  "modeName": "secret weekly report",
+  "displayName": "秘密周报",
+  "extendModes": ["homework", "hidden", "separate list"]
+}
+```
+
+可见性属性会沿继承链向下传递；`abstract` 不传递。允许嵌套继承（`A -> B -> C`），
+但任意两个父模式的继承链（含父模式自身）不能有交集，否则视为菱形继承并返回 `400`。
 
 ### 响应（成功）
 
@@ -519,14 +611,21 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
   "success": true,
   "id": "mode_xxxxxxxxxxxx",
   "modeName": "maths multiple-choise homework",
+  "displayName": "数学选择题作业",
   "extendModes": ["homework", "answer sheet"],
   "baseType": "answer sheet",
+  "hidden": false,
+  "teacherOnly": false,
+  "adminOnly": false,
+  "invisible": false,
+  "separateList": false,
+  "abstract": false,
   "createdAt": "2026-11-01T20:00:00+08:00",
   "createdBy": "赵明远"
 }
 ```
 
-失败时返回 `{ "ok": false, "msg": "..." }`：重复模式、未知继承模式返回 `400`；非管理员返回 `403`。
+失败时返回 `{ "ok": false, "msg": "..." }`：重复模式、未知继承模式、菱形继承返回 `400`；非管理员返回 `403`。
 
 发布时把 `modeName` 作为 `/api/new-submission` 的 `type`（也接受 `mode` / `modeName`）。服务端会解析该模式并按其 `baseType` 执行答题卡校验、问卷表单与公示版禁用提交等行为；`/api/all-submission` 的 `type` 保留自定义名称，`baseType` 给出实际行为。
 
@@ -542,9 +641,48 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 {
   "ok": true,
   "modes": [
-    { "id": "builtin_homework", "name": "homework", "modeName": "homework", "baseType": "homework", "extendModes": [], "builtin": true },
-    { "id": "mode_xxxxxxxxxxxx", "name": "maths multiple-choise homework", "modeName": "maths multiple-choise homework", "baseType": "answer sheet", "extendModes": ["homework", "answer sheet"], "builtin": false }
+    {
+      "id": "builtin_homework",
+      "name": "homework",
+      "modeName": "homework",
+      "displayName": "作业",
+      "normalized": "homework",
+      "baseType": "homework",
+      "extendModes": [],
+      "inheritModes": ["homework"],
+      "builtin": true,
+      "hidden": false,
+      "teacherOnly": false,
+      "adminOnly": false,
+      "invisible": false,
+      "separateList": false,
+      "abstract": false,
+      "visibility": "normal"
+    },
+    {
+      "id": "builtin_separate_list",
+      "name": "separate list",
+      "modeName": "separate list",
+      "displayName": "单独列出征集",
+      "baseType": "other",
+      "separateList": true,
+      "abstract": true,
+      "builtin": true
+    },
+    {
+      "id": "mode_xxxxxxxxxxxx",
+      "name": "maths multiple-choise homework",
+      "modeName": "maths multiple-choise homework",
+      "displayName": "数学选择题作业",
+      "baseType": "answer sheet",
+      "extendModes": ["homework", "answer sheet"],
+      "inheritModes": ["maths multiple-choise homework", "homework", "answer sheet"],
+      "builtin": false,
+      "visibility": "normal"
+    }
   ],
+  "tabs": ["与 modes 中 separateList=true 且 abstract=false 的项相同"],
+  "separateLists": ["与 tabs 相同"],
   "datas": ["与 modes 相同"]
 }
 ```

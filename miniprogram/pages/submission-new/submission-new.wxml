@@ -27,9 +27,9 @@
 
     <view class="field">
       <view class="label">{{s.deadlineLabel}}</view>
-      <view class="switch-row">
+      <view class="check-row">
         <view class="muted">{{hasDeadline ? (date + ' ' + time) : s.noDeadline}}</view>
-        <switch checked="{{hasDeadline}}" color="#0010ff" bindchange="onDeadlineSwitch" />
+        <view class="checkbox {{hasDeadline ? 'on' : ''}}" bindtap="onDeadlineSwitch">{{hasDeadline ? '✓' : ''}}</view>
       </view>
       <view class="flex-between" wx:if="{{hasDeadline}}">
         <picker mode="date" value="{{date}}" bindchange="onDate">

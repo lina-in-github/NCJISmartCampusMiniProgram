@@ -29,8 +29,21 @@ function decorateSubmission(row, options) {
   var baseType = String(row.baseType || type);
   var notice = NOTICE_RE.test(baseType);
 
-  out.typeText = time.typeLabel(type);
+  out.typeText = row.displayName || row.typeDisplayName || time.typeLabel(type);
   out.baseType = baseType;
+  var flags = row.flags || {};
+  out.hidden = !!row.hidden || !!flags.hidden;
+  out.teacherOnly = !!row.teacherOnly || !!flags.teacherOnly;
+  out.adminOnly = !!row.adminOnly || !!flags.adminOnly;
+  out.invisible = !!row.invisible || !!flags.invisible;
+  out.separateList = !!row.separateList || !!flags.separateList;
+  out.abstract = !!row.abstract || !!flags.abstract;
+  out.flagTexts = [];
+  if (out.invisible) out.flagTexts.push(strings.t("submission_flag_invisible"));
+  if (out.adminOnly) out.flagTexts.push(strings.t("submission_flag_admin_only"));
+  else if (out.teacherOnly) out.flagTexts.push(strings.t("submission_flag_teacher_only"));
+  if (out.hidden) out.flagTexts.push(strings.t("submission_flag_hidden"));
+  if (out.separateList && !out.abstract) out.flagTexts.push(strings.t("submission_flag_separate_list"));
   out.deadlineTs = deadlineTs;
   out.deadlineText = chip.text;
   out.deadlineTone = chip.tone;

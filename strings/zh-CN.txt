@@ -511,7 +511,7 @@ name=account_mode_name lines=0 content=模式名称
 name=account_mode_name_placeholder lines=0 content=例如：数学选择题作业
 name=account_mode_extends lines=0 content=继承模式（逗号分隔）
 name=account_mode_extends_placeholder lines=0 content=homework, answer sheet
-name=account_mode_extends_hint lines=0 content=继承内置模式或本班已有模式的行为；例如继承 answer sheet 会自动启用答题卡校验与批改。
+name=account_mode_extends_hint lines=0 content=继承内置模式或本班已有模式；可见性也在这里定义，例如继承 hidden / teacher only / admin only / invisible / separate list。
 name=account_mode_create lines=0 content=新增征集模式
 name=account_mode_hint lines=0 content=选择要新增模式的班级管理员身份
 name=account_mode_created lines=0 content=已新增模式「{}」，行为基类：{}
@@ -554,7 +554,7 @@ name=mp_mode_form_title lines=0 content=新增征集模式
 name=mp_mode_name_label lines=0 content=模式名称
 name=mp_mode_extends_label lines=0 content=继承模式（逗号分隔）
 name=mp_mode_create lines=0 content=新增征集模式
-name=mp_mode_hint lines=0 content=管理员可为所选班级新增自定义征集模式。
+name=mp_mode_hint lines=0 content=管理员可为所选班级新增自定义征集模式；可见性通过继承定义，例如 hidden / teacher only / admin only / invisible / separate list。
 name=mp_modes_title lines=0 content=班级征集模式
 name=mp_modes_none lines=0 content=暂无自定义模式
 name=mp_pending_title lines=0 content=我发布的待回复提交
@@ -567,3 +567,40 @@ name=mp_reply_id lines=0 content=回复编号
 name=mp_dialog_tip lines=0 content=提示
 name=mp_submissions_scope_mine lines=0 content=我发布的
 name=mp_dialog_mine_badge lines=0 content=我发布的
+name=type_hidden lines=0 content=隐藏征集
+name=type_teacher_only lines=0 content=仅教师征集
+name=type_admin_only lines=0 content=仅管理员征集
+name=type_invisible lines=0 content=不显示征集
+name=type_separate_list lines=0 content=单独列出征集
+name=submission_flag_hidden lines=0 content=隐藏
+name=submission_flag_teacher_only lines=0 content=仅教师
+name=submission_flag_admin_only lines=0 content=仅管理员
+name=submission_flag_invisible lines=0 content=不显示
+name=submission_flag_abstract lines=0 content=抽象类别
+name=submission_flag_separate_list lines=0 content=单独列出
+name=submissions_show_hiddens lines=0 content=显示隐藏
+name=submissions_hide_hiddens lines=0 content=隐藏已隐藏
+name=submissions_tab_all lines=0 content=全部
+name=submissions_tabs_label lines=0 content=单独列出类别
+name=new_mode_group_special lines=0 content=可见性类别
+name=new_mode_hint_special lines=0 content=可选择隐藏 / 仅教师 / 仅管理员 / 不显示等可见性类别；「单独列出征集」是抽象类别，只能被继承。
+name=account_mode_display_name lines=0 content=显示名称（支持中文）
+name=account_mode_display_name_placeholder lines=0 content=例如：数学随堂练习
+name=account_mode_flags lines=0 content=可见性与列表属性（已改为继承）
+name=account_mode_flag_hidden lines=0 content=隐藏征集
+name=account_mode_flag_teacher_only lines=0 content=仅教师
+name=account_mode_flag_admin_only lines=0 content=仅管理员
+name=account_mode_flag_invisible lines=0 content=不显示
+name=account_mode_flag_separate lines=0 content=单独列出
+name=account_mode_flag_abstract lines=0 content=抽象类别（只能继承）
+name=account_mode_flags_hint lines=0 content=可见性通过 extendModes 继承；允许嵌套继承，但同一祖先不能通过多条路径继承（禁止菱形继承）。
+name=mp_submissions_show_hiddens lines=0 content=显示隐藏
+name=mp_submissions_hide_hiddens lines=0 content=隐藏已隐藏
+name=mp_submissions_tab_all lines=0 content=全部
+name=mp_submissions_tabs_label lines=0 content=单独列出类别
+name=mp_mode_display_name_label lines=0 content=显示名称（支持中文）
+name=mp_mode_flags_label lines=0 content=可见性与列表属性
+name=account_mode_inherit_visibility lines=0 content=继承可见性类别（写入 extendModes）
+name=account_mode_visibility_inherit_hint lines=0 content=勾选后会作为父模式加入 extendModes；例如继承 hidden 即隐藏征集，继承 separate list 即单独列出。可见性会沿继承链生效。
+name=account_mode_abstract_hint lines=0 content=抽象类别不能直接发布，只能被继承；抽象属性不随继承传递，因此需要在这里显式声明。
+name=mp_mode_abstract_hint lines=0 content=抽象类别不能直接发布，只能被继承；抽象属性不随继承传递，因此需要显式开启。

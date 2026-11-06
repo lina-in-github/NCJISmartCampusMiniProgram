@@ -56,14 +56,9 @@
               <view>{{item.optionCaption}}</view>
             </view>
 
-            <view wx:else class="switch-row">
-              <view class="muted">{{item.field.label || item.field.id}}</view>
-              <switch
-                checked="{{answers[item.domId]}}"
-                color="#0010ff"
-                data-dom="{{item.domId}}"
-                bindchange="onToggleSwitch"
-              />
+            <view wx:else class="option-row" data-dom="{{item.domId}}" bindtap="onToggleSwitch">
+              <view class="checkbox {{answers[item.domId] ? 'on' : ''}}">{{answers[item.domId] ? '✓' : ''}}</view>
+              <view>{{item.field.label || item.field.id}}</view>
             </view>
           </view>
         </block>

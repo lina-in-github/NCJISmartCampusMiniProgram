@@ -924,9 +924,8 @@ fn push_field(out: &mut String, field: &Field, occurrence: usize) {
             out.push_str(&format!(
                 concat!(
                     r#"<label class="survey-choice">"#,
-                    r#"<span class="switch"><input type="checkbox" role="switch" id="{dom_id}" name="{key}" "#,
+                    r#"<input class="survey-check" type="checkbox" id="{dom_id}" name="{key}" "#,
                     r#"data-survey-id="{key}" data-survey-kind="{kind}"{required_attr}{grade_attr}>"#,
-                    r#"<span class="switch-track"></span></span>"#,
                     r#"<span class="survey-choice-text">{caption}{req_mark}</span>"#,
                     r#"</label>"#
                 ),

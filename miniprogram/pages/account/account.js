@@ -44,7 +44,7 @@ Page({
     classForm: { name: "", desc: "", classId: "" },
     memberForm: { classId: "", quantity: "3", typeIndex: 0 },
     generated: [],
-    modeForm: { name: "", extends: "" },
+    modeForm: { name: "", displayName: "", extends: "", abstract: false },
     dialog: dialog.base(),
     pwd: { old: "", new1: "", new2: "" },
     pwdLoading: false,
@@ -137,10 +137,13 @@ Page({
         deriving: strings.t("mp_deriving_key"),
         modeFormTitle: strings.t("mp_mode_form_title"),
         modeNameLabel: strings.t("mp_mode_name_label"),
+        modeDisplayNameLabel: strings.t("mp_mode_display_name_label"),
         modeExtendsLabel: strings.t("mp_mode_extends_label"),
         modeExtendPlaceholder: strings.t("mp_extend_placeholder"),
         modeCreate: strings.t("mp_mode_create"),
         modeHint: strings.t("mp_mode_hint"),
+        modeAbstract: strings.t("mp_mode_abstract"),
+        modeAbstractHint: strings.t("mp_mode_abstract_hint"),
       },
     });
     this.refresh();
@@ -579,8 +582,16 @@ Page({
     this.setData({ "modeForm.name": e.detail.value });
   },
 
+  onModeDisplayName: function (e) {
+    this.setData({ "modeForm.displayName": e.detail.value });
+  },
+
   onModeExtends: function (e) {
     this.setData({ "modeForm.extends": e.detail.value });
+  },
+
+  onModeAbstract: function () {
+    this.setData({ "modeForm.abstract": !this.data.modeForm.abstract });
   },
 
   onAddMode: function () {
@@ -603,14 +614,25 @@ Page({
       .filter(Boolean);
     ui.loading(strings.t("toast_saving"));
     api
-      .newMode({ auth: admin.key, modeName: name, extendModes: extendModes })
+      .newMode({
+        auth: admin.key,
+        modeName: name,
+        displayName: String(self.data.modeForm.displayName || "").trim() || name,
+        extendModes: extendModes,
+        abstract: self.data.modeForm.abstract === true,
+      })
       .then(function (res) {
         ui.hideLoading();
         if (!res.ok) {
           ui.toast(res.msg || strings.t("flash_request_failed"), "error");
           return;
         }
-        self.setData({ "modeForm.name": "", "modeForm.extends": "" });
+        self.setData({
+          "modeForm.name": "",
+          "modeForm.displayName": "",
+          "modeForm.extends": "",
+          "modeForm.abstract": false,
+        });
         ui.toast(strings.S("mp_mode_created", res.modeName || name), "ok");
       })
       .catch(function (err) {

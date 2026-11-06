@@ -11,7 +11,7 @@ var account = require("./utils/account");
 
 App({
   globalData: {
-    version: "v0.1.6-mp.1",
+    version: "v0.1.11-mp.1",
     startedAt: 0,
   },
 
