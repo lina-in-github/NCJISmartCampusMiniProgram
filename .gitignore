@@ -14,3 +14,7 @@
 
 # Local TLS certificates / keys
 /certs/
+
+# Python cache
+__pycache__/
+*.pyc

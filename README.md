@@ -299,6 +299,7 @@ common_done:
 
 - 每个条目由两行组成：第一行是 `key:`，第二行是该 key 的内容；
 - 内容行原样保留（包括行首/行尾空格）；空行与 `#` 注释可以出现在条目之间；
+- 修改文案后运行 `python3 scripts/mp_strings.py`：按 key A-Z 排序并重新生成 [`miniprogram/utils/strings.js`](miniprogram/utils/strings.js)；`--check` 只校验、不写文件；
 - 启动时读取 `strings/` 下所有 `*.txt`，与 `strings.db` 比较并同步：新增/修改的 key 写入，文件中已删除的 key 从数据库删除；
 - `strings.db` 是生成文件（已加入 `.gitignore`），每次启动自动同步，不需要手工维护；
 - 页面 HTML 支持 `@[strings/key]` 标签，渲染完成后自动替换；缺失 key 会保留原标签，便于排查；
@@ -503,6 +504,7 @@ API 不使用该字符串库：API 的错误与成功消息统一为英文。
 ```bash
 cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析与校验/字符串解析同步/数据库种子/X25519+AES-GCM 等单元测试
 ./scripts/smoke.sh  # 启动临时服务并在真实 HTTP 层跑一遍主流程（依赖 sqlite3、node）
+python3 scripts/mp_strings.py --check  # 检查字符串 A-Z 排序与小程序 strings.js 是否为最新
 ```
 
 `scripts/smoke.sh` 会在临时 SQLite 上验证字符串同步、页面无未替换标签、页面无行内样式、CSS 使用 `#0010ff` / `#ff0000` / `#eedd00`、非对称登录（`login-try` / `get-auths` / 注册 / 改密 / 旧账号迁移 / 错误答案）、发布征集、上传、下载、匹配模式、回复、账号中心表单（注册/偏好/密码/删除身份）、账号与角色会话隔离、改名、权限拒绝、创建/删除班级与成员、删除密钥与对象，并自动清理进程与数据。
@@ -537,6 +539,7 @@ v0.1.13 的冒烟测试新增覆盖：`/home/pc/admin/modes/` 管理页（列表
 │   └── zh-CN.txt           # 简体中文 UI 文案（启动时同步到 strings.db）
 ├── scripts/
 │   ├── smoke.sh            # HTTP 冒烟测试
+│   ├── mp_strings.py       # 按 A-Z 排序字符串并生成小程序 strings.js
 │   └── auth-client.js      # 命令行非对称登录客户端（复用前端密码学实现）
 └── src/
     ├── main.rs             # 路由与启动
