@@ -1,0 +1,84 @@
+/* 账号中心复用 app.wxss */
+
+/* ---------------------------------------------------------------- 重置密钥：黄色色调 */
+
+/* 列表里的「↻ 重置密钥」按钮 */
+.btn.reset-key {
+  background: rgba(238, 221, 0, 0.18);
+  border-color: #eedd00;
+  color: #7a6f00;
+}
+
+.theme-dark .btn.reset-key {
+  background: rgba(238, 221, 0, 0.16);
+  border-color: #eedd00;
+  color: #eedd00;
+}
+
+/* 重置密钥弹窗（卡片） */
+.card.reset-panel {
+}
+
+.theme-dark .card.reset-panel {
+}
+
+.card.reset-panel .section-title {
+}
+
+.theme-dark .card.reset-panel .section-title {
+}
+
+/* 弹窗里的输入框 */
+.card.reset-panel .input {
+}
+
+.theme-dark .card.reset-panel .input {
+}
+
+/* 弹窗里的主按钮 */
+.btn.reset-primary {
+  background: #eedd00;
+  border-color: #eedd00;
+  color: #000000;
+}
+.theme-dark .btn.reset-primary {
+  background: #c0b000;
+  border-color: #c0b000;
+  color: #ffffff
+}
+
+/* 弹窗里的次要按钮 */
+.btn.reset-ghost {
+  color: #000000
+}
+
+.theme-dark .btn.reset-ghost {
+  color: #ffffff
+}
+
+/* 弹窗里的提示条 */
+.notice.reset-notice {
+  border-color: #eedd00;
+  background: rgba(238, 221, 0, 0.16);
+  color: #7a6f00;
+}
+
+.theme-dark .notice.reset-notice {
+  color: #eedd00;
+}
+
+/* 新密钥展示区 */
+.reset-key-value {
+  border: 2rpx solid #eedd00;
+  background: rgba(238, 221, 0, 0.12);
+  border-radius: 12rpx;
+  padding: 16rpx;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  word-break: break-all;
+  color: #7a6f00;
+}
+
+.theme-dark .reset-key-value {
+  color: #eedd00;
+}

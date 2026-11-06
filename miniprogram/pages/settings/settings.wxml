@@ -1,0 +1,50 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{s.title}}</view>
+      <view class="topbar-sub">{{s.dataSource}}：{{s.isOnline ? s.online : s.offline}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onBack">{{s.back}}</view>
+    </view>
+  </view>
+
+  <view class="tabs">
+    <view class="tab {{mode === 'online' ? 'active' : ''}}" data-mode="online" bindtap="onMode">{{s.online}}</view>
+    <view class="tab {{mode === 'offline' ? 'active' : ''}}" data-mode="offline" bindtap="onMode">{{s.offline}}</view>
+  </view>
+
+  <view class="notice" wx:if="{{mode === 'online'}}">{{s.onlineDesc}}</view>
+  <view class="notice" wx:else>{{s.offlineDesc}}</view>
+
+  <view class="card">
+    <view class="field">
+      <view class="label">{{s.ipLabel}}</view>
+      <input
+        class="input"
+        value="{{baseUrl}}"
+        placeholder="http://192.168.1.20:3000"
+        bindinput="onInput"
+        confirm-type="done"
+      />
+      <view class="hint">{{s.ipHint}}</view>
+    </view>
+    <view class="btn-row">
+      <view class="btn primary" bindtap="onTest">{{testing ? '…' : s.test}}</view>
+      <view class="btn ghost" bindtap="onSave">{{s.save}}</view>
+    </view>
+    <view class="notice mt-md {{result.ok ? '' : 'danger'}}" wx:if="{{result}}">{{result.text}}</view>
+  </view>
+
+  <view class="card">
+    <view class="notice warn" wx:if="{{mode === 'online'}}">{{s.domainTip}}</view>
+    <view class="notice" wx:else>{{s.offlineTip}}</view>
+    <view class="flex-between mt-md">
+      <view>
+        <view>{{s.reset}}</view>
+        <view class="hint">{{s.resetDesc}}</view>
+      </view>
+      <view class="btn small danger" bindtap="onResetMock">{{s.reset}}</view>
+    </view>
+  </view>
+</view>

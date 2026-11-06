@@ -1,0 +1,74 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{s.title}}</view>
+      <view class="topbar-sub">{{s.mode}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onToggleTheme">◐</view>
+      <view class="icon-btn" bindtap="onSettings">{{s.settings}}</view>
+    </view>
+  </view>
+
+  <view class="hero">
+    <view class="hero-eyebrow">{{s.title}}</view>
+    <view class="hero-title">{{s.login}}</view>
+    <view class="hero-desc">{{s.desc}}</view>
+  </view>
+
+  <view class="tabs">
+    <view class="tab {{tab === 'login' ? 'active' : ''}}" data-tab="login" bindtap="onTab">{{s.login}}</view>
+    <view class="tab {{tab === 'register' ? 'active' : ''}}" data-tab="register" bindtap="onTab">{{s.firstUse}}</view>
+  </view>
+
+  <view class="notice danger" wx:if="{{error}}">{{error}}</view>
+
+  <view class="card" wx:if="{{tab === 'login'}}">
+    <view class="field">
+      <view class="label">{{s.username}}</view>
+      <input class="input" value="{{username}}" bindinput="onUsername" />
+    </view>
+    <view class="field">
+      <view class="label">{{s.password}}</view>
+      <input class="input" password value="{{password}}" bindinput="onPassword" />
+    </view>
+    <view class="btn-row">
+      <view class="btn primary block" bindtap="onLogin">{{loading ? '…' : s.login}}</view>
+    </view>
+    <view class="hint" wx:if="{{loading}}">{{s.deriving}}</view>
+    <view class="btn-row">
+      <view class="btn ghost small" bindtap="onDemo">{{s.demo}}</view>
+    </view>
+  </view>
+
+  <view class="card" wx:else>
+    <view class="field">
+      <view class="label">{{s.username}}</view>
+      <input class="input" value="{{username}}" bindinput="onUsername" />
+    </view>
+    <view class="field">
+      <view class="label">{{s.password}}</view>
+      <input class="input" password value="{{password}}" bindinput="onPassword" />
+    </view>
+    <view class="field">
+      <view class="label">{{s.password2}}</view>
+      <input class="input" password value="{{password2}}" bindinput="onPassword2" />
+    </view>
+    <view class="field">
+      <view class="label">{{s.keyOptional}}</view>
+      <input class="input mono" value="{{key}}" placeholder="SC-STU-XXXX-XXXX" bindinput="onKey" />
+      <view class="hint">{{s.keyNote}}</view>
+    </view>
+    <view class="btn-row">
+      <view class="btn primary block" bindtap="onRegister">{{loading ? '…' : s.register}}</view>
+    </view>
+    <view class="hint" wx:if="{{loading}}">{{s.deriving}}</view>
+  </view>
+
+  <view class="card">
+    <view class="notice">{{s.localNote}}</view>
+    <view class="btn-row">
+      <view class="btn ghost small" bindtap="onBack">{{s.back}}</view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,85 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{s.title}}</view>
+      <view class="topbar-sub">{{s.subtitle}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onBack">{{s.back}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="field">
+      <view class="label">{{s.nameLabel}}<text class="req">*</text></view>
+      <input class="input" value="{{name}}" placeholder="{{s.namePlaceholder}}" bindinput="onName" />
+    </view>
+
+    <view class="field">
+      <view class="label">{{s.typeLabel}}</view>
+      <picker mode="selector" range="{{typeLabels}}" value="{{typeIndex}}" bindchange="onType">
+        <view class="picker">
+          <view>{{typeLabels[typeIndex]}}</view>
+          <view class="muted">▾</view>
+        </view>
+      </picker>
+    </view>
+
+    <view class="field">
+      <view class="label">{{s.deadlineLabel}}</view>
+      <view class="switch-row">
+        <view class="muted">{{hasDeadline ? (date + ' ' + time) : s.noDeadline}}</view>
+        <switch checked="{{hasDeadline}}" color="#0010ff" bindchange="onDeadlineSwitch" />
+      </view>
+      <view class="flex-between" wx:if="{{hasDeadline}}">
+        <picker mode="date" value="{{date}}" bindchange="onDate">
+          <view class="picker">{{date}}</view>
+        </picker>
+        <picker mode="time" value="{{time}}" bindchange="onTime">
+          <view class="picker">{{time}}</view>
+        </picker>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="label">{{s.descLabel}}</view>
+      <textarea
+        class="textarea"
+        value="{{desc}}"
+        placeholder="{{s.descPlaceholder}}"
+        bindinput="onDesc"
+        maxlength="2000"
+      ></textarea>
+    </view>
+
+    <view class="notice" wx:if="{{typeValue === 'survey'}}">{{s.tipSurvey}}</view>
+    <view class="notice" wx:if="{{typeValue === 'answer sheet'}}">{{s.tipAnswerSheet}}</view>
+
+    <view class="btn-row">
+      <view class="btn primary block" bindtap="onSubmit">{{submitting ? '…' : s.submit}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="kv">
+      <view class="kv-key">{{s.currentClass}}</view>
+      <view class="kv-val">{{ctx.classText || ctx.identityText}}</view>
+    </view>
+    <view class="kv">
+      <view class="kv-key">{{s.publishIdentity}}</view>
+      <view class="kv-val">{{ctx.identityText}} · {{ctx.roleText}}</view>
+    </view>
+    <view class="kv">
+      <view class="kv-key">{{s.dataScope}}</view>
+      <view class="kv-val">{{s.dataScopeValue}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">{{s.tipsTitle}}</view>
+    <view class="hint">{{s.tip1}}</view>
+    <view class="hint">{{s.tip2}}</view>
+    <view class="hint">{{s.tip3}}</view>
+    <view class="hint">{{s.tip4}}</view>
+  </view>
+</view>

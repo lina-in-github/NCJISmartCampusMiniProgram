@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "首页",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "bottom-nav": "/components/bottom-nav/index"
+  }
+}

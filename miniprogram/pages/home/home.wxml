@@ -1,0 +1,103 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{ctx.identityText}}</view>
+      <view class="topbar-sub">{{ctx.roleText}}{{ctx.classText ? ' · ' + ctx.classText : ''}} · {{ctx.modeText}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view
+        class="icon-btn"
+        wx:if="{{ctx.studentView}}"
+        data-role="{{ctx.parent ? 'student' : 'parent'}}"
+        bindtap="onSwitchView"
+      >{{ctx.parent ? s.switchToStudent : s.switchToParent}}</view>
+      <view class="icon-btn" bindtap="onToggleTheme">◐</view>
+    </view>
+  </view>
+
+  <view class="hero">
+    <view class="hero-eyebrow">{{s.hero.eyebrow}}</view>
+    <view class="hero-title">{{s.hero.title}}</view>
+    <view class="hero-desc">{{s.hero.desc}}</view>
+    <view class="hero-actions">
+      <view class="btn light" bindtap="onSubmissions">{{s.browse}}</view>
+      <view class="btn glass" wx:if="{{ctx.staff}}" bindtap="onPublish">{{s.publish}}</view>
+      <view class="btn glass" bindtap="onUploads">{{s.uploadsNav}}</view>
+      <view class="btn glass" bindtap="onAccount">{{s.account}}</view>
+    </view>
+  </view>
+
+  <view class="notice danger" wx:if="{{error}}">{{error}}</view>
+  <view class="muted" wx:if="{{loading}}">…</view>
+
+  <view class="stats">
+    <view class="stat {{item.tone}}" wx:for="{{stats}}" wx:key="key">
+      <view class="stat-value">{{item.value}}</view>
+      <view class="stat-label">{{item.label}}</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">{{s.recentSubmissions}}</view>
+      <view class="section-link" bindtap="onSubmissions">{{s.viewAll}}</view>
+    </view>
+
+    <view class="empty" wx:if="{{!submissions.length}}">
+      <view class="empty-title">{{s.emptySubmissionsTitle}}</view>
+      <view class="empty-desc">{{s.emptySubmissionsDesc}}</view>
+    </view>
+
+    <view class="list" wx:else>
+      <view class="card" wx:for="{{submissions}}" wx:key="id" data-id="{{item.id}}" bindtap="onOpenSubmission">
+        <view class="flex-between">
+          <view class="card-title">{{item.name}}</view>
+          <view class="chip {{item.deadlineTone}}">{{item.deadlineText}}</view>
+        </view>
+        <view class="chip-row">
+          <view class="chip">{{item.typeText}}</view>
+          <view class="chip pinned" wx:if="{{item.pinned}}">{{s.noticePinned}}</view>
+          <view class="chip">{{item.countText}}</view>
+        </view>
+        <view class="card-desc" wx:if="{{item.descShort}}">{{item.descShort}}</view>
+        <view class="card-foot">
+          <view>{{item.createdBy}} · {{item.createdText}}</view>
+          <view class="accent-text">{{s.viewAll}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">{{s.uploadsTitle}}</view>
+      <view class="section-link" bindtap="onUploads">{{s.viewAll}}</view>
+    </view>
+    <view class="notice" wx:if="{{sourceNote}}">{{sourceNote}}</view>
+
+    <view class="empty" wx:if="{{!uploads.length}}">
+      <view class="empty-title">{{s.emptyUploadsTitle}}</view>
+      <view class="empty-desc">{{s.uploadsHint}}</view>
+    </view>
+
+    <view class="list" wx:else>
+      <view
+        class="row"
+        wx:for="{{uploads}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        data-sid="{{item.submissionId}}"
+        bindtap="onOpenUpload"
+      >
+        <view class="row-head">
+          <view class="row-title">{{item.title}}</view>
+          <view class="chip {{item.statusTone}}">{{item.statusText}}</view>
+        </view>
+        <view class="row-sub">{{item.uploaderText}}<text wx:if="{{item.studentNo}}"> · {{item.studentNo}}</text> · {{item.timeText}}</view>
+        <view class="row-desc" wx:if="{{item.descShort}}">{{item.descShort}}</view>
+      </view>
+    </view>
+  </view>
+
+  <bottom-nav active="home" />
+</view>

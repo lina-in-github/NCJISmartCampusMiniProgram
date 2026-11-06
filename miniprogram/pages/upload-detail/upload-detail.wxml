@@ -1,0 +1,134 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{s.title}}</view>
+      <view class="topbar-sub">{{submission.name || ''}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onBack">{{s.backList}}</view>
+    </view>
+  </view>
+
+  <view class="notice danger" wx:if="{{error}}">{{error}}</view>
+  <view class="muted" wx:if="{{loading}}">…</view>
+
+  <block wx:if="{{!loading && upload}}">
+    <view class="card">
+      <view class="flex-between">
+        <view class="card-title">{{upload.title}}</view>
+        <view class="chip {{upload.statusTone}}">{{upload.statusText}}</view>
+      </view>
+      <view class="chip-row">
+        <view class="chip">{{upload.roleText}}</view>
+        <view class="chip" wx:if="{{upload.gradeText}}">{{upload.gradeText}}</view>
+      </view>
+
+      <view class="divider"></view>
+      <view class="kv">
+        <view class="kv-key">{{s.infoUploader}}</view>
+        <view class="kv-val">{{upload.uploaderText}}</view>
+      </view>
+      <view class="kv" wx:if="{{upload.studentNo}}">
+        <view class="kv-key">{{s.infoStudentNo}}</view>
+        <view class="kv-val">{{upload.studentNo}}</view>
+      </view>
+      <view class="kv">
+        <view class="kv-key">{{s.infoSubmittedAt}}</view>
+        <view class="kv-val">{{upload.createdFull}}</view>
+      </view>
+      <view class="kv">
+        <view class="kv-key">{{s.infoReplyCount}}</view>
+        <view class="kv-val">{{upload.replyCount}}</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">{{s.attachmentsTitle}}</view>
+      <view class="muted" wx:if="{{!upload.desc && !answers.length}}">{{s.noDesc}}</view>
+      <view class="survey-text" wx:if="{{upload.desc && !answers.length}}">{{upload.desc}}</view>
+
+      <view class="kv" wx:for="{{answers}}" wx:key="id">
+        <view class="kv-key">{{item.label}}</view>
+        <view class="kv-val">{{item.value || s.emptyAnswer}}</view>
+      </view>
+
+      <view class="grade mt-md" wx:if="{{grade}}">
+        <view class="grade-head">
+          <view class="section-title">{{s.gradeTitle}}</view>
+          <view class="grade-score">{{grade.score}} / {{grade.full}}</view>
+        </view>
+        <view class="muted">{{grade.rightText}}</view>
+        <view class="grade-item {{item.ok ? 'ok' : 'bad'}}" wx:for="{{grade.items}}" wx:key="id">
+          <view>
+            <view>{{item.label}}</view>
+            <view class="muted" wx:if="{{!item.ok}}">{{s.expected}} {{item.answer}}</view>
+          </view>
+          <view class="grade-mark">{{item.ok ? '✓' : '✕'}} {{item.score}}</view>
+        </view>
+      </view>
+
+      <view class="divider"></view>
+      <view class="muted" wx:if="{{!upload.attachmentCount}}">{{s.noAttachments}}</view>
+      <view class="attachment" wx:for="{{upload.attachments}}" wx:key="index" data-index="{{index}}" bindtap="onOpenAttachment">
+        <view class="attachment-name">{{item.name}}</view>
+        <view class="attachment-meta">{{item.mime}}</view>
+        <view class="chip">{{s.openAttachment}}</view>
+      </view>
+
+      <view class="btn-row">
+        <view class="btn ghost small" bindtap="onOpenSubmission">{{s.viewSubmission}}</view>
+        <view class="btn ghost small" wx:if="{{!submission.isNotice}}" bindtap="onReupload">{{s.reupload}}</view>
+        <view class="btn danger small" wx:if="{{ctx.role === 'admin'}}" bindtap="onDeleteUpload">{{s.deleteUpload}}</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="flex-between">
+        <view class="section-title">{{s.repliesTitle}}</view>
+        <view class="chip">{{upload.replyCount}}</view>
+      </view>
+
+      <view class="empty" wx:if="{{!replies.length}}">
+        <view class="empty-title">{{s.replyEmptyTitle}}</view>
+        <view class="empty-desc">{{ctx.staff ? s.replyEmptyStaff : s.replyEmptyStudent}}</view>
+      </view>
+
+      <view class="reply" wx:for="{{replies}}" wx:key="key">
+        <view class="reply-head">
+          <view class="avatar">师</view>
+          <view>{{s.repliesTitle}} {{item.no}} · {{s.replyRoleHint}}</view>
+        </view>
+        <view class="reply-body">{{item.content}}</view>
+      </view>
+
+      <block wx:if="{{ctx.staff}}">
+        <view class="divider"></view>
+        <view class="label">{{s.replyPublish}} · {{s.infoUploader}}：{{upload.uploaderText}}</view>
+        <view class="btn-row">
+          <view class="btn ghost small" data-text="{{s.quickDoneText}}" bindtap="onQuickReply">{{s.quickDone}}</view>
+          <view class="btn ghost small" data-text="{{s.quickSupplementText}}" bindtap="onQuickReply">{{s.quickSupplement}}</view>
+          <view class="btn ghost small" data-text="{{s.quickReceivedText}}" bindtap="onQuickReply">{{s.quickReceived}}</view>
+        </view>
+        <textarea
+          class="textarea mt-sm"
+          value="{{replyText}}"
+          placeholder="{{s.replyPlaceholder}}"
+          bindinput="onReplyInput"
+          maxlength="5000"
+        ></textarea>
+        <view class="btn-row">
+          <view class="btn primary block" bindtap="onSendReply">{{sending ? '…' : s.replyPublish}}</view>
+        </view>
+        <view class="hint">{{s.replyNote}}</view>
+        <view class="hint">{{s.tipStaff}}</view>
+        <view class="hint danger-text" wx:if="{{ctx.role === 'admin'}}">{{s.removeReplyNote}}</view>
+      </block>
+      <view class="hint" wx:else>
+        {{s.replyOnlyStaff}}
+        <view>{{s.tipStudent}}</view>
+      </view>
+    </view>
+
+    <view class="notice" wx:if="{{sourceNote}}">{{sourceNote}}</view>
+  </block>
+</view>

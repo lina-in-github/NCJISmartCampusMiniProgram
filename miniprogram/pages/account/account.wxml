@@ -1,0 +1,231 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{user.username}}</view>
+      <view class="topbar-sub">{{s.mode}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onToggleTheme">◐</view>
+      <view class="icon-btn" bindtap="onSettings">{{s.settings}}</view>
+    </view>
+  </view>
+
+  <view class="stats">
+    <view class="stat">
+      <view class="stat-value">{{stats.identities}}</view>
+      <view class="stat-label">{{s.statsAuths}}</view>
+    </view>
+    <view class="stat">
+      <view class="stat-value">{{stats.classes}}</view>
+      <view class="stat-label">{{s.statsClasses}}</view>
+    </view>
+    <view class="stat">
+      <view class="stat-value">{{stats.admins}}</view>
+      <view class="stat-label">{{s.statsAdmin}}</view>
+    </view>
+  </view>
+
+  <view class="notice">{{s.localNote}}</view>
+
+  <view class="card">
+    <view class="section-title">{{s.savePrefs}}</view>
+    <view class="field mt-sm">
+      <view class="label">{{s.displayName}}</view>
+      <input class="input" value="{{displayName}}" bindinput="onDisplayName" />
+    </view>
+    <view class="field">
+      <view class="label">{{s.theme}}</view>
+      <picker mode="selector" range="{{s.themeLabels}}" value="{{themeIndex}}" bindchange="onThemePick">
+        <view class="picker">
+          <view>{{s.themeLabels[themeIndex]}}</view>
+          <view class="muted">▾</view>
+        </view>
+      </picker>
+    </view>
+    <view class="field">
+      <view class="label">{{s.viewMode}}</view>
+      <picker mode="selector" range="{{s.viewLabels}}" value="{{viewIndex}}" bindchange="onViewPick">
+        <view class="picker">
+          <view>{{s.viewLabels[viewIndex]}}</view>
+          <view class="muted">▾</view>
+        </view>
+      </picker>
+      <view class="hint">{{s.viewModeHint}}</view>
+    </view>
+    <view class="btn-row">
+      <view class="btn primary block" bindtap="onSavePrefs">{{s.savePrefs}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">{{s.myAuths}}</view>
+    <view class="hint">{{s.refreshPanelHint}}</view>
+
+    <view class="card warn" wx:if="{{refresh.open}}">
+      <view class="section-title">{{s.refreshTitle}}</view>
+      <view class="hint">{{s.refreshDesc}}</view>
+      <view class="notice warn" wx:if="{{refresh.label}}">{{refresh.label}}</view>
+
+      <block wx:if="{{!refresh.newKey}}">
+        <view class="field">
+          <view class="label">{{s.password}}</view>
+          <input
+            class="input"
+            password
+            value="{{refresh.password}}"
+            placeholder="{{s.refreshHint}}"
+            bindinput="onRefreshPassword"
+          />
+          <view class="hint">{{s.refreshHint}}</view>
+        </view>
+        <view class="btn-row">
+          <view class="btn reset-primary block"  bindtap="onRefreshConfirm">
+            {{refresh.loading ? s.refreshWorking : s.refreshConfirm}}
+          </view>
+          <view class="btn ghost block warn" bindtap="onRefreshCancel">{{s.cancel}}</view>
+        </view>
+      </block>
+
+      <block wx:else>
+        <view class="notice warn">{{s.refreshDoneTitle}}</view>
+        <view class="hint">{{s.refreshDoneDesc}}</view>
+        <view class="value mono warn">{{refresh.newKey}}</view>
+        <view class="btn-row">
+          <view class="btn ghost block warn" bindtap="onRefreshCopy">{{s.copyKey}}</view>
+          <view class="btn primary block warn" bindtap="onRefreshCancel">{{s.done}}</view>
+        </view>
+      </block>
+    </view>
+    
+    <view class="empty" wx:if="{{!bindings.length}}">
+      <view class="empty-title">{{s.noAuthsTitle}}</view>
+      <view class="empty-desc">{{s.noAuthsDesc}}</view>
+    </view>
+  
+
+    <view class="row mt-sm" wx:for="{{bindings}}" wx:key="key">
+      <view class="row-head">
+        <view class="row-title">{{item.label}}</view>
+        <view class="chip {{item.current ? 'ok' : ''}}">{{item.roleText}}</view>
+      </view>
+      <view class="row-sub mono">{{item.key}}</view>
+      <view class="btn-row">
+        <view class="btn small primary" data-key="{{item.key}}" bindtap="onEnter">{{s.enter}}</view>
+        <view class="btn small ghost" data-key="{{item.key}}" bindtap="onCopyKey">{{s.copyKey}}</view>
+        <view class="btn small ghost" data-key="{{item.key}}" bindtap="onRename">{{s.renameIdentity}}</view>
+        <view class="btn small ghost" data-key="{{item.key}}" bindtap="onUnbind">{{s.unbind}}</view>
+        <view
+          class="btn small ghost warn"
+          data-key="{{item.key}}"
+          data-label="{{item.label}}"
+          bindtap="onRefreshKey"
+        >{{s.resetKey}}</view>
+        <view class="btn small danger" data-key="{{item.key}}" bindtap="onDeleteKeyRemote">{{s.deleteKey}}</view>
+      </view>
+    </view>
+
+    <view class="divider"></view>
+    <view class="field">
+      <view class="label">{{s.addAuth}}</view>
+      <input
+        class="input mono"
+        value="{{newKey}}"
+        placeholder="{{s.addAuthPlaceholder}}"
+        bindinput="onNewKey"
+      />
+    </view>
+    <view class="btn-row">
+      <view class="btn ghost block" bindtap="onBindKey">{{binding ? '…' : s.bind}}</view>
+    </view>
+  </view>
+
+  
+  <view class="card">
+    <view class="section-title">{{s.adminArea}}</view>
+    <view class="hint">{{s.adminHint}}</view>
+
+    <view class="notice warn" wx:if="{{!adminBindings.length}}">{{s.notAdminNote}}</view>
+
+    <block wx:if="{{adminBindings.length}}">
+      <view class="field mt-md">
+        <view class="label">{{s.classCreateAs}}</view>
+        <picker mode="selector" range="{{adminBindings}}" range-key="label" value="{{adminIndex}}" bindchange="onAdminPick">
+          <view class="picker">
+            <view>{{adminBindings[adminIndex].label}}</view>
+            <view class="muted">▾</view>
+          </view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="label">{{s.className}}</view>
+        <input class="input" value="{{classForm.name}}" placeholder="{{s.classNamePlaceholder}}" bindinput="onClassName" />
+      </view>
+      <view class="field">
+        <view class="label">{{s.classDesc}}</view>
+        <input class="input" value="{{classForm.desc}}" placeholder="{{s.classDescPlaceholder}}" bindinput="onClassDesc" />
+      </view>
+      <view class="btn-row">
+        <view class="btn primary block" bindtap="onCreateClass">{{s.classCreate}}</view>
+      </view>
+
+      <view class="divider"></view>
+      <view class="field">
+        <view class="label">{{s.classIdLabel}}</view>
+        <input class="input mono" value="{{memberForm.classId}}" placeholder="cls_xxxxxxxxxxxx" bindinput="onMemberClassId" />
+        <view class="hint">{{s.classIdHint}}</view>
+      </view>
+      <view class="field">
+        <view class="label">{{s.memberRole}}</view>
+        <picker mode="selector" range="{{s.memberTypeLabels}}" value="{{memberForm.typeIndex}}" bindchange="onMemberType">
+          <view class="picker">
+            <view>{{s.memberTypeLabels[memberForm.typeIndex]}}</view>
+            <view class="muted">▾</view>
+          </view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="label">{{s.memberQuantity}}</view>
+        <input class="input" type="number" value="{{memberForm.quantity}}" bindinput="onMemberQuantity" />
+      </view>
+      <view class="btn-row">
+        <view class="btn primary block" bindtap="onGenerateMembers">{{s.memberGenerate}}</view>
+      </view>
+      <view class="hint">{{s.memberNote}}</view>
+      <view class="hint">{{s.memberHint}}</view>
+
+      <view class="card" wx:if="{{generated.length}}">
+        <view class="flex-between">
+          <view class="section-title">{{s.generatedTitle}}</view>
+          <view class="btn small ghost" bindtap="onCopyGenerated">{{s.copyKey}}</view>
+        </view>
+        <view class="kv" wx:for="{{generated}}" wx:key="id">
+          <view class="kv-key">{{item.roleText}} {{item.studentID}}</view>
+          <view class="kv-val mono">{{item.key}}</view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <view class="card">
+    <view class="section-title">{{s.security}}</view>
+    <view class="field mt-sm">
+      <view class="label">{{s.currentPassword}}</view>
+      <input class="input" password value="{{pwd.old}}" bindinput="onPwdOld" />
+    </view>
+    <view class="field">
+      <view class="label">{{s.newPassword}}</view>
+      <input class="input" password value="{{pwd.new1}}" bindinput="onPwdNew" />
+    </view>
+    <view class="field">
+      <view class="label">{{s.confirmNewPassword}}</view>
+      <input class="input" password value="{{pwd.new2}}" bindinput="onPwdNew2" />
+    </view>
+    <view class="btn-row">
+      <view class="btn ghost block" bindtap="onChangePassword">{{pwdLoading ? '…' : s.changePassword}}</view>
+      <view class="btn danger block" bindtap="onLogoutAccount">{{s.logoutAccount}}</view>
+    </view>
+    <view class="hint" wx:if="{{pwdLoading}}">{{s.deriving}}</view>
+  </view>
+
+  <bottom-nav active="account" />
+</view>

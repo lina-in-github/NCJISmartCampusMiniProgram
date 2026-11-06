@@ -1,0 +1,63 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">
+        {{ctx.staff ? s.titleStaff : (ctx.parent ? s.titleParent : s.titleSelf)}}
+      </view>
+      <view class="topbar-sub">
+        {{ctx.staff ? s.subStaff : (ctx.parent ? s.subParent : s.subSelf)}}
+      </view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onToggleTheme">◐</view>
+    </view>
+  </view>
+
+  <view class="tabs" wx:if="{{ctx.staff}}">
+    <view class="tab {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="onFilter">
+      {{s.tabAll}} {{counts.all}}
+    </view>
+    <view class="tab {{filter === 'pending' ? 'active' : ''}}" data-filter="pending" bindtap="onFilter">
+      {{s.tabPending}} {{counts.pending}}
+    </view>
+    <view class="tab {{filter === 'replied' ? 'active' : ''}}" data-filter="replied" bindtap="onFilter">
+      {{s.tabReplied}} {{counts.replied}}
+    </view>
+  </view>
+
+  <view class="notice danger" wx:if="{{error}}">{{error}}</view>
+  <view class="notice" wx:if="{{sourceNote}}">{{sourceNote}}</view>
+  <view class="muted" wx:if="{{loading}}">…</view>
+
+  <view class="empty" wx:if="{{!loading && !rows.length}}">
+    <view class="empty-title">
+      {{filter === 'pending' ? s.emptyPending : (filter === 'replied' ? s.emptyReplied : s.emptyAll)}}
+    </view>
+    <view class="empty-desc">
+      {{ctx.staff ? s.emptyDescStaff : (ctx.parent ? s.emptyDescParent : s.emptyDescSelf)}}
+    </view>
+    <view class="btn-row">
+      <view class="btn primary small" bindtap="onGoSubmissions">{{s.go}}</view>
+    </view>
+  </view>
+
+  <view class="list">
+    <view class="row" wx:for="{{rows}}" wx:key="id" data-index="{{index}}" bindtap="onOpen">
+      <view class="row-head">
+        <view class="row-title">{{item.title}}</view>
+        <view class="chip {{item.statusTone}}">{{item.statusText}}</view>
+      </view>
+      <view class="row-sub">
+        {{item.uploaderText}}<text wx:if="{{item.studentNo}}"> · {{item.studentNo}}</text>
+      </view>
+      <view class="row-sub" wx:if="{{item.submissionName}}">{{item.submissionName}}</view>
+      <view class="row-desc" wx:if="{{item.descShort && !item.gradeText}}">{{item.descShort}}</view>
+      <view class="card-foot">
+        <view>{{item.timeText}}</view>
+        <view class="chip" wx:if="{{item.gradeText}}">{{item.gradeText}}</view>
+      </view>
+    </view>
+  </view>
+
+  <bottom-nav active="uploads" />
+</view>
