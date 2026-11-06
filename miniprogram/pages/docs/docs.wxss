@@ -1,0 +1,17 @@
+/* 文档与相关：保持 README 的换行与缩进，不渲染 Markdown。 */
+.docs-card {
+  padding-bottom: 30rpx;
+}
+
+.docs-text {
+  display: block;
+  margin-top: 18rpx;
+  padding-top: 18rpx;
+  border-top: 2rpx solid var(--border);
+  color: var(--text);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 23rpx;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

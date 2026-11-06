@@ -1,6 +1,6 @@
 [package]
 name = "smart-campus"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2021"
 description = "智慧校园 · 班级征集、提交与回复平台"
 
@@ -15,3 +15,4 @@ sha2 = "0.10"
 rand = "0.8"
 ring = "0.17"
 regex = "1"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }

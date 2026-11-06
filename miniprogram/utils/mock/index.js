@@ -2370,6 +2370,16 @@ function health() {
   return ok({ service: "smart-campus", time: time.now() });
 }
 
+/** `/api/docs`：离线时没有仓库文件，返回离线提示；在线模式由服务端读取 README.md。 */
+function docs() {
+  return ok({
+    title: strings.t("nav_docs"),
+    fileName: "README.md",
+    content: strings.t("mp_docs_offline_body"),
+    format: "text",
+  });
+}
+
 // ---------------------------------------------------------------------------
 // 密钥轮换 / 批量调用（与 src/api.rs 的 refresh-key、multi-api 对齐）
 // ---------------------------------------------------------------------------
@@ -2596,6 +2606,7 @@ var HANDLERS = {
   "upgrade-pubkey": upgradePubkey,
   "multi-api": multiApi,
   health: health,
+  docs: docs,
 };
 
 /** 分发一次 `/api/<endpoint>` 调用。返回与真实服务同构的响应对象。 */

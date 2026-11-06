@@ -696,6 +696,36 @@ pub async fn logout(State(st): State<AppState>, headers: HeaderMap) -> Response 
 }
 
 // ---------------------------------------------------------------------------
+// /docs
+// ---------------------------------------------------------------------------
+
+/// 文档与相关：内容固定来自仓库根目录的 README.md。
+/// 已登录时复用侧边栏 / 底部导航；未登录时显示独立的公开文档页。
+pub async fn docs_page(State(st): State<AppState>, headers: HeaderMap, Query(q): Q) -> Response {
+    let flash = flash_from(&q);
+    if let Some((session, auth)) = role_session(&st, &headers) {
+        let prefs = crate::tools::user_prefs(&st, &headers);
+        let ctx = page_context(
+            &st,
+            &headers,
+            &session,
+            &auth,
+            &prefs,
+            &t("nav_docs"),
+            "docs",
+            flash,
+        );
+        return html(view::docs_page(&ctx));
+    }
+    if let Some(user) = current_user(&st, &headers) {
+        let mut ctx = LayoutCtx::account(&user, &user.prefs, flash);
+        ctx.active = "docs".to_string();
+        return html(view::docs_page(&ctx));
+    }
+    html(view::docs_guest())
+}
+
+// ---------------------------------------------------------------------------
 // /user
 // ---------------------------------------------------------------------------
 

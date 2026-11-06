@@ -116,6 +116,13 @@ grep -q '#ff0000' <<<"$CSS" || fail "CSS 未使用红色 #ff0000"
 grep -q '#eedd00' <<<"$CSS" || fail "CSS 未使用黄色 #eedd00"
 code="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/")"
 assert_eq "$code" "303" "根路径跳转"
+DOCS_JSON="$(post /api/docs '{}')"
+assert_jq "$DOCS_JSON" '.ok == true and .fileName == "README.md" and .format == "markdown" and (.content | startswith("# ")) and (.content | contains("## 2. 页面路由"))' "docs API 返回 README 原文"
+DOCS_HTML="$(curl -sS "$BASE/docs")"
+grep -q '<h1>智慧校园' <<<"$DOCS_HTML" || fail "文档页未渲染 Markdown 标题"
+grep -q '<table>' <<<"$DOCS_HTML" || fail "文档页未渲染 Markdown 表格"
+grep -q '<pre><code' <<<"$DOCS_HTML" || fail "文档页未渲染 Markdown 代码块"
+grep -q '文档与相关' <<<"$DOCS_HTML" || fail "文档页缺少标题"
 [[ -f "$TMP/strings.db" ]] || fail "strings.db 未生成"
 STRING_COUNT="$(sqlite3 "$TMP/strings.db" "SELECT COUNT(*) FROM strings WHERE language = 'zh-CN';")"
 [[ "$STRING_COUNT" -gt 100 ]] || fail "strings.db 同步数量异常：$STRING_COUNT"
@@ -221,6 +228,10 @@ grep -q "函数与导数" <<<"$HOME_HTML" || fail "学生首页没有显示班�
 if grep -q "还没有征集" <<<"$HOME_HTML"; then fail "学生首页错误显示暂无征集"; fi
 if grep -q '@\[strings/' <<<"$HOME_HTML"; then fail "学生首页存在未替换的字符串标签"; fi
 if grep -q 'style=' <<<"$HOME_HTML"; then fail "学生首页存在行内样式（HTML/CSS 未解耦）"; fi
+grep -q 'href="/docs"' <<<"$HOME_HTML" || fail "主导航缺少「文档与相关」入口"
+DOCS_AUTH_HTML="$(curl -sS -b "$TMP/stu-cookie" "$BASE/docs")"
+grep -q 'markdown-body' <<<"$DOCS_AUTH_HTML" || fail "登录后文档页未渲染"
+grep -q 'href="/docs"' <<<"$DOCS_AUTH_HTML" || fail "登录后文档页缺少主导航"
 SUBS_HTML="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/submissions/")"
 grep -q "函数与导数" <<<"$SUBS_HTML" || fail "学生征集列表为空"
 if grep -q '@\[strings/' <<<"$SUBS_HTML"; then fail "学生征集页存在未替换的字符串标签"; fi

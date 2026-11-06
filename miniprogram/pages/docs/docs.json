@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "文档与相关",
+  "usingComponents": {
+    "bottom-nav": "/components/bottom-nav/index"
+  }
+}

@@ -1,0 +1,37 @@
+<view class="app theme-{{theme}}">
+  <view class="topbar">
+    <view class="topbar-left">
+      <view class="topbar-title">{{s.title}}</view>
+      <view class="topbar-sub">{{fileName}} · {{s.subtitle}}</view>
+    </view>
+    <view class="topbar-actions">
+      <view class="icon-btn" bindtap="onToggleTheme">◐</view>
+      <view class="icon-btn" bindtap="onBack">{{s.back}}</view>
+    </view>
+  </view>
+
+  <view class="card docs-card">
+    <view class="flex-between">
+      <view class="section-title">{{s.title}}</view>
+      <view class="chip">{{fileName}}</view>
+    </view>
+    <view class="hint">{{s.plainHint}}</view>
+
+    <view class="muted mt-md" wx:if="{{loading}}">{{s.loading}}</view>
+
+    <block wx:elif="{{error}}">
+      <view class="notice danger">{{error}}</view>
+      <view class="btn-row">
+        <view class="btn ghost block" bindtap="onRetry">{{s.retry}}</view>
+      </view>
+    </block>
+
+    <view class="empty" wx:elif="{{!content}}">
+      <view class="empty-title">{{s.empty}}</view>
+    </view>
+
+    <text class="docs-text" wx:else selectable="true">{{content}}</text>
+  </view>
+
+  <bottom-nav active="docs" />
+</view>

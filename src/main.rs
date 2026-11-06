@@ -17,6 +17,7 @@ use crate::types::AppState;
 mod api;
 mod crypto;
 mod db;
+mod docs;
 mod logging;
 mod pages;
 mod strings;
@@ -195,6 +196,8 @@ async fn main() {
         .route("/user/password", post(pages::user_password))
         .route("/user/class", post(pages::user_create_class))
         .route("/user/logout", post(pages::user_logout))
+        .route("/docs", get(pages::docs_page))
+        .route("/docs/", get(pages::docs_page))
         .route("/api/upload", post(api::upload))
         .route("/api/download", post(api::download))
         .route("/api/new-submission", post(api::new_submission))
@@ -219,6 +222,7 @@ async fn main() {
         .route("/api/rename-auth", post(api::rename_auth))
         .route("/api/del-object", post(api::del_object))
         .route("/api/health", get(api::health))
+        .route("/api/docs", post(api::docs))
         .route("/api/login-try", post(api::login_try))
         .route("/api/get-auths", post(api::get_auths))
         .route("/api/refresh-key", post(api::refresh_key))

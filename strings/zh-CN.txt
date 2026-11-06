@@ -311,6 +311,26 @@ deadline_minutes:
 剩 {} 分钟
 deadline_none:
 无截止
+docs_back:
+返回
+docs_empty:
+暂无可显示的文档内容。
+docs_eyebrow:
+文档与相关
+docs_file:
+README.md
+docs_load_failed:
+文档加载失败
+docs_loading:
+正在读取 README.md…
+docs_plain_hint:
+小程序端以纯文本显示
+docs_retry:
+重新加载
+docs_subtitle:
+项目说明、使用指南与相关文档
+docs_web_hint:
+网页端渲染 Markdown
 error_back_home:
 返回首页
 error_not_found_desc:
@@ -512,8 +532,6 @@ identity_student_id:
 学生 {}
 identity_teacher:
 老师
-iupload_quick_supplement_text:
-请补充解题过程，并标注关键步骤。
 layout_account:
 ACCOUNT
 layout_bottom_nav:
@@ -757,6 +775,8 @@ mp_dialog_unbind_title:
 解除身份绑定
 mp_dialog_uploader:
 提交人
+mp_docs_offline_body:
+离线模式无法读取服务器上的 README.md，请切换到在线模式后重试。
 mp_extend_placeholder:
 homework, answer sheet
 
@@ -804,8 +824,7 @@ mp_mode_flags_label:
 mp_mode_form_title:
 新增征集模式
 mp_mode_hint:
-为所选班级新增自定义征集模式需要填写类型的原始名称，
-例： survey / answer sheet / hidden / teacher only / admin only / invisible / separate list。
+为所选班级新增自定义征集模式需要填写类型的原始名称，例： survey / answer sheet / hidden / teacher only / admin only / invisible / separate list。
 
 mp_mode_inherit_visibility:
 继承可见性类别
@@ -948,6 +967,8 @@ mp_uploads_tab_mine:
 我的提交
 nav_account:
 账号
+nav_docs:
+文档与相关
 nav_home:
 首页
 nav_modes:
@@ -1356,6 +1377,8 @@ upload_quick_received_text:
 已收到，稍后为你详细批注。
 upload_quick_supplement:
 请补充过程
+upload_quick_supplement_text:
+请补充解题过程，并标注关键步骤。
 upload_replies:
 回复
 upload_reply_empty_staff:

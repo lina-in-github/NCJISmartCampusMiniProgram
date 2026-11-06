@@ -35,6 +35,7 @@ Component({
           { key: "home", label: strings.t("nav_home"), url: "/pages/home/home" },
           { key: "submissions", label: strings.t("type_generic"), url: "/pages/submissions/submissions" },
           { key: "uploads", label: strings.t(uploadsKey), url: "/pages/uploads/uploads" },
+          { key: "docs", label: strings.t("nav_docs"), url: "/pages/docs/docs" },
           { key: "account", label: strings.t("nav_account"), url: "/pages/account/account" },
         ],
       });

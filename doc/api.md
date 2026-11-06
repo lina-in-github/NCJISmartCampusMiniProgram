@@ -974,6 +974,38 @@ curl http://localhost:3000/api/health
 
 ---
 
+## 11.1 `/api/docs`
+
+公开接口（v0.1.14）：返回仓库根目录 `README.md` 的 Markdown 原文，供 Web 文档页与小程序「文档与相关」页使用。
+
+小程序端不解析 Markdown，直接把 `content` 作为纯文本展示；换行与缩进由原文保留。
+
+### 请求
+
+```bash
+curl -X POST http://localhost:3000/api/docs -H 'Content-Type: application/json' -d '{}'
+```
+
+请求体可为空对象；不需要 `auth`。
+
+### 响应
+
+```json
+{
+  "ok": true,
+  "title": "文档与相关",
+  "fileName": "README.md",
+  "content": "# 智慧校园 · Campus OS\n\n...",
+  "format": "markdown"
+}
+```
+
+- `content`：`README.md` 原文；
+- `format`：固定为 `markdown`，表示原文格式，不代表小程序会渲染它；
+- 该接口也允许在 `/multi-api` 中调用。
+
+---
+
 ## 12. 用户登录（非对称挑战，v0.1.7）
 
 v0.1.7 起，**用户名 + 密码不再发送给服务端**。浏览器用密钥派生函数从密码派生
@@ -1388,3 +1420,6 @@ curl -s $BASE/api/del-mode \
 征集类型管理页（Web `/home/<mob|pc>/admin/modes/`，小程序 `pages/modemanage/modemanage`）
 通过 `/api/all-modes` 读取列表、`/api/new-mode` 新增、`/api/del-mode` 删除；删除仍被征集的类型时，
 前端在二次确认后带 `force: true` 重试。
+
+「文档与相关」页（Web `/docs`，小程序 `pages/docs/docs`）由服务端读取仓库根目录 `README.md`：
+Web 端在服务端渲染 Markdown；小程序端调用 `/api/docs` 后在页面内按纯文本显示。

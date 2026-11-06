@@ -478,6 +478,12 @@ fn nav_items(ctx: &LayoutCtx) -> Vec<NavItem> {
             });
         }
         items.push(NavItem {
+            key: "docs",
+            label: "@[strings/nav_docs]",
+            href: "/docs".to_string(),
+            icon: "book",
+        });
+        items.push(NavItem {
             key: "login",
             label: if ctx.auth_id.is_empty() {
                 "@[strings/common_identity_login]"
@@ -513,6 +519,12 @@ fn nav_items(ctx: &LayoutCtx) -> Vec<NavItem> {
             label: uploads_label,
             href: format!("{base}uploads/"),
             icon: "folder",
+        },
+        NavItem {
+            key: "docs",
+            label: "@[strings/nav_docs]",
+            href: "/docs".to_string(),
+            icon: "book",
         },
         NavItem {
             key: "user",
@@ -661,7 +673,7 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
 
     let bottom_nav: String = nav
         .iter()
-        .take(4)
+        .take(5)
         .map(|item| {
             let active = if ctx.active == item.key
                 || (item.key == "submissions" && ctx.active == "submission")
@@ -2635,6 +2647,69 @@ pub fn user_account(
         admin_area = admin_area
     );
     layout(ctx, &body)
+}
+
+// ---------------------------------------------------------------------------
+// 文档与相关
+// ---------------------------------------------------------------------------
+
+/// 已登录（角色空间 / 账号中心）的文档页，复用主导航。
+pub fn docs_page(ctx: &LayoutCtx) -> String {
+    let body = format!(
+        r#"<div class="page-head">
+  <div>
+    <span class="eyebrow">@[strings/docs_eyebrow]</span>
+    <h2 class="page-title">@[strings/nav_docs]</h2>
+    <p class="page-sub">@[strings/docs_subtitle]</p>
+  </div>
+  <div class="page-actions">
+    <span class="chip type">{file}</span>
+    <span class="chip soft">@[strings/docs_web_hint]</span>
+  </div>
+</div>
+<article class="markdown-body">{content}</article>"#,
+        file = crate::docs::FILE_NAME,
+        content = crate::docs::render_html()
+    );
+    layout(ctx, &body)
+}
+
+/// 未登录的公开文档页：不依赖班级身份，只展示 README 与登录入口。
+pub fn docs_guest() -> String {
+    let body = format!(
+        r#"<div class="docs-guest">
+  <header class="docs-guest-head">
+    <a class="brand" href="/login">
+      <span class="brand-mark">{logo}</span>
+      <span class="brand-text"><strong>@[strings/title]</strong><small>@[strings/brand_tagline]</small></span>
+    </a>
+    <a class="btn outline sm" href="/login/account">{lock}@[strings/common_identity_login]</a>
+  </header>
+  <main class="docs-guest-main">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">@[strings/docs_eyebrow]</span>
+        <h1 class="page-title">@[strings/nav_docs]</h1>
+        <p class="page-sub">@[strings/docs_subtitle]</p>
+      </div>
+      <div class="page-actions">
+        <span class="chip type">{file}</span>
+        <span class="chip soft">@[strings/docs_web_hint]</span>
+      </div>
+    </div>
+    <article class="markdown-body">{content}</article>
+  </main>
+</div>"#,
+        logo = icon("graduation"),
+        lock = icon("lock"),
+        file = crate::docs::FILE_NAME,
+        content = crate::docs::render_html()
+    );
+    let mut out = document_head("@[strings/nav_docs]", "system");
+    out.push_str(&format!(
+        r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=6"></script><script src="/static/app.js?v=6"></script></body></html>"#
+    ));
+    out
 }
 
 pub fn not_found(ctx: Option<&LayoutCtx>, msg: &str) -> axum::response::Response {

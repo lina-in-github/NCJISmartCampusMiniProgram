@@ -1625,6 +1625,7 @@ async fn dispatch_multi_api(
         "/api/register" => call!(RegisterReq, register),
         "/api/upgrade-pubkey" => call!(UpgradePubkeyReq, upgrade_pubkey),
         "/api/health" => health().await,
+        "/api/docs" => docs().await,
         _ => api_error_code(
             StatusCode::NOT_FOUND,
             format!("unsupported api path: {path}"),
@@ -1665,6 +1666,24 @@ async fn response_to_json(response: Response) -> Value {
 
 pub async fn health() -> Response {
     api_ok(json!({ "ok": true, "service": "smart-campus", "time": now_ts() }))
+}
+
+// ---------------------------------------------------------------------------
+// /api/docs
+// ---------------------------------------------------------------------------
+
+/// 返回仓库根目录 README.md 的 Markdown 原文。
+///
+/// 页面 UI 文案仍来自 strings；这里返回的是文档内容本身，因此不翻译。
+/// 小程序端按纯文本展示，不做 Markdown 渲染。
+pub async fn docs() -> Response {
+    api_ok(json!({
+        "ok": true,
+        "title": crate::strings::t("nav_docs"),
+        "fileName": crate::docs::FILE_NAME,
+        "content": crate::docs::plain_text(),
+        "format": "markdown"
+    }))
 }
 
 #[cfg(test)]

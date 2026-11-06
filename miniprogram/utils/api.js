@@ -139,6 +139,11 @@ function health() {
   return request.health();
 }
 
+/** 文档与相关：读取服务器仓库根目录 README.md（Markdown 原文，页面按纯文本展示）。 */
+function docs() {
+  return request.post("docs", {});
+}
+
 /** 用只读/无副作用的调用推断密钥的角色。
  *
  *  1. `/api/all-submission` -> 401 表示密钥无效；
@@ -196,6 +201,7 @@ module.exports = {
   upgradePubkey: upgradePubkey,
   multiApi: multiApi,
   health: health,
+  docs: docs,
   probeIdentity: probeIdentity,
   pageRoleOf: pageRoleOf,
 };

@@ -12,6 +12,7 @@
     "pages/upload-detail/upload-detail",
     "pages/account/account",
     "pages/modemanage/modemanage",
+    "pages/docs/docs",
     "pages/account-login/account-login"
   ],
   "window": {

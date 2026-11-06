@@ -2,13 +2,13 @@
 
 一个面向班级的智慧校园 Web 服务：**征集发布 → 学生提交（含附件）→ 老师/管理员回复**，并提供班级、成员密钥与多身份账号管理。原生 HTML / CSS / JavaScript 前端，无 CDN、无前端构建步骤，支持手机版与电脑版布局。
 
-- 技术栈：Rust 2021 · Axum 0.8 · rusqlite（SQLite，bundled）· serde · sha2 · ring（X25519 / HKDF / AES-GCM）· regex
+- 技术栈：Rust 2021 · Axum 0.8 · rusqlite（SQLite，bundled）· serde · sha2 · ring（X25519 / HKDF / AES-GCM）· regex · pulldown-cmark（Markdown → HTML）
 - 数据库：SQLite，首次启动自动建表并写入演示数据
 - 需求来源：[`doc/requirements.md`](doc/requirements.md)
 - 完整 API 文档：[`doc/api.md`](doc/api.md)
-- 当前版本：**v0.1.13**（本次迭代新增 Web / 小程序征集类型管理页面）
-- 本次新增：Web `/home/<mob|pc>/admin/modes/` 与小程序 `pages/modemanage/modemanage` 征集类型管理页（列表 / 新增 / 删除，删除失败时二次确认强制删除）；导航栏、征集列表与账号中心提供入口；后台继续调用 `/api/new-mode`、`/api/all-modes`、`/api/del-mode`
-- 历史版本：v0.1.12 删除征集类型 API `/api/del-mode` 与发布页「手动输入」原始类型；v0.1.10 / v0.1.11 征集可见性类别、单独列出标签页与模式继承约束；v0.1.7 个人查询、班级自定义征集模式、小程序敏感操作弹窗；v0.1.6 学生 / 家长视角改为前台展示区分；v0.1.5 新增征集模式「答题卡」（问卷派生：`id` / `data-answer` / `data-score`、全部必填、前端自动批改）；v0.1.4 新增征集模式「问卷」（简介中的 `<input/>` / `<checkbox/>` / `<switch/>` 渲染为表单、bot 提交 JSON 答案）；v0.1.2 UI 文案集中到 `strings/zh-CN.txt`、API 文案改为英文、角色身份与账号会话隔离；v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
+- 当前版本：**v0.1.14**（本次迭代新增「文档与相关」页面）
+- 本次新增：Web `/docs` 与小程序 `pages/docs/docs`「文档与相关」页面；内容直接来自仓库根目录 `README.md`，Web 端由服务端渲染 Markdown，小程序端通过 `/api/docs` 获取原文并按纯文本显示；侧边栏 / 底部导航与账号中心提供入口
+- 历史版本：v0.1.13 Web / 小程序征集类型管理页；v0.1.12 删除征集类型 API `/api/del-mode` 与发布页「手动输入」原始类型；v0.1.10 / v0.1.11 征集可见性类别、单独列出标签页与模式继承约束；v0.1.7 个人查询、班级自定义征集模式、小程序敏感操作弹窗；v0.1.6 学生 / 家长视角改为前台展示区分；v0.1.5 新增征集模式「答题卡」（问卷派生：`id` / `data-answer` / `data-score`、全部必填、前端自动批改）；v0.1.4 新增征集模式「问卷」（简介中的 `<input/>` / `<checkbox/>` / `<switch/>` 渲染为表单、bot 提交 JSON 答案）；v0.1.2 UI 文案集中到 `strings/zh-CN.txt`、API 文案改为英文、角色身份与账号会话隔离；v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
 
 ---
 
@@ -130,6 +130,7 @@ SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
 | `…/submission/<id>/all` | 该征集下的提交（学生仅自己，老师/管理员全班）；公示版仅渲染详情；问卷/答题卡渲染可填写的表单 |
 | `…/upload/<id>/` | 提交详情：附件预览、回复列表、重新上传、管理员删除 |
 | `/user` | 账号中心：偏好设置、密码、绑定/删除/轮换身份、创建班级、生成成员密钥；未登录 → `/login/account` |
+| `/docs` | 文档与相关：展示仓库根目录 `README.md`（Web 渲染 Markdown；未登录也可访问） |
 | `/logout` | POST，退出登录 |
 
 兼容说明：
@@ -165,6 +166,7 @@ SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
 | `/api/rename-auth` | 任意身份 | 修改当前 `auth` 的显示名称（v0.1.1 新增） |
 | `/api/del-object` | 管理员 | 按 id 删除征集 / 提交 / 回复 / 班级 / auth / 征集模式 |
 | `/api/health` | 公开 | 健康检查（额外提供） |
+| `/api/docs` | 公开 | 返回仓库根目录 `README.md` 原文（`title` / `fileName` / `content` / `format`），供小程序按纯文本展示 |
 | `/api/register` | 公开 | 提交用户名 + X25519 公钥创建账号（可选绑定密钥） |
 | `/api/login-try` | 公开 | 返回挑战密文与回答加密密钥 |
 | `/api/get-auths` | 公开（需登录会话） | 验证挑战后返回该账号的全部 auth 密钥 |
@@ -486,6 +488,7 @@ API 不使用该字符串库：API 的错误与成功消息统一为英文。
 - **答题卡**：全部必答，提交后由浏览器自动批改，详情页显示得分卡（总分、答对题数、逐题正误与错题答案），列表显示得分标签。
 - **视角**：学生身份在顶栏一键切换「学生视角 / 家长视角」，只用词不同、数据相同。
 - **账号中心**：深/浅/跟随系统主题、默认视图、学生身份显示模式（学生 / 家长视角）、显示名称、密码、多身份密钥（显示/复制/改名/轮换/进入/删除）、创建班级、生成成员密钥。
+- **文档与相关**：Web `/docs` 与小程序 `pages/docs/docs` 展示仓库根目录 `README.md`；Web 复用主布局并渲染 Markdown（标题、表格、代码块等），小程序通过 `/api/docs` 获取原文后以纯文本显示，保留换行与缩进，不做 Markdown 解析。
 - 断点：>1120px 侧边栏电脑版；≤920px 顶栏 + 底部导航手机版；≤640px 单列紧凑布局。
 - 主题会记住到 `localStorage`；未登录页也支持系统深色模式。
 
@@ -523,6 +526,8 @@ v0.1.12 的冒烟测试新增覆盖：`/api/del-mode`（按 ID / 模式名删除
 
 v0.1.13 的冒烟测试新增覆盖：`/home/pc/admin/modes/` 管理页（列表、新增表单、删除按钮、无未替换字符串与行内样式）、管理员征集列表的「征集类型」入口，以及教师访问管理页被重定向。
 
+v0.1.14 的冒烟测试新增覆盖：`/api/docs` 返回 README 原文与文件名、`/docs` 公开页渲染 Markdown 标题 / 表格 / 代码块、已登录 `/docs` 复用主导航且导航含「文档与相关」入口。
+
 问卷模式在冒烟测试中覆盖：发布问卷、详情页/上传页渲染控件、必填项缺失返回 400、`bot-upload` 答案经 `/api/download` 原样返回、提交详情按题目展示答案、仍允许非 JSON 说明的 API 提交。
 
 ---
@@ -548,6 +553,7 @@ v0.1.13 的冒烟测试新增覆盖：`/home/pc/admin/modes/` 管理页（列表
     ├── survey.rs           # 问卷 / 答题卡：控件解析、渲染、必填校验、答案整理、批改结果
     ├── crypto.rs           # 非对称登录密码学：X25519 / HKDF / AES-256-GCM / base64
     ├── db.rs               # 唯一业务 SQL/事务/连接层、建班/成员、演示数据、公钥迁移
+    ├── docs.rs             # 文档与相关：README.md 嵌入、Markdown → HTML、纯文本输出
     ├── logging.rs          # ./log 每日文件日志、请求/错误/panic 记录
     ├── types.rs            # 状态、模型、请求/表单、登录挑战会话
     ├── tools.rs            # 时间、base64、转义、会话、MatchMode
@@ -622,6 +628,7 @@ v0.1.13 的冒烟测试新增覆盖：`/home/pc/admin/modes/` 管理页（列表
 | 小程序敏感操作弹窗（显示对象信息、必要时密码） | ✅ `components/confirm-dialog`，覆盖删除 / 重置 / 删除密钥 / 解绑等 |
 | 前端保持与后端同步 | ✅ Web 发布页 / 账号中心 / 首页 / 列表；小程序 API 层、离线 mock、发布页与账号页 |
 | `/multi-api` 批量调用，`results` 索引对应，每项自带 `ok`，禁止两次确认接口 | ✅ 顺序执行、最多 100 项，见 `doc/api.md` 第 13 节 |
+| 新增「文档与相关」页面，进入后显示 `README.md` | ✅ Web `/docs` + 小程序 `pages/docs/docs`；内容来自仓库根目录 `README.md`，Web 渲染 Markdown，小程序按纯文本显示 |
 | 日志系统（放在 `./log` 下） | ✅ `src/logging.rs` 每日 `app-YYYY-MM-DD.log`，记录启动 / HTTP / 错误 / panic，不写敏感数据 |
 | 「以班级为单位 / 学生以自身为单位」 | ✅ 服务端数据范围隔离 |
 
