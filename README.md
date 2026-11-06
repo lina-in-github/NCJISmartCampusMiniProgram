@@ -291,14 +291,14 @@ users  1 ─── n  auths  n ─── 1  classes
 所有页面 UI 文案集中在 [`strings/zh-CN.txt`](strings/zh-CN.txt)，格式为：
 
 ```txt
-name=title lines=0 content=智慧校园
-name=admin_slogan lines=2 content=
-让班级的每件事，
-都有迹可循
+title:
+智慧校园
+common_done:
+完成
 ```
 
-- `lines=0`：内容写在 `content=` 同行；
-- `lines=N`：`content=` 后可为空，随后 N 行即内容（保留换行）；
+- 每个条目由两行组成：第一行是 `key:`，第二行是该 key 的内容；
+- 内容行原样保留（包括行首/行尾空格）；空行与 `#` 注释可以出现在条目之间；
 - 启动时读取 `strings/` 下所有 `*.txt`，与 `strings.db` 比较并同步：新增/修改的 key 写入，文件中已删除的 key 从数据库删除；
 - `strings.db` 是生成文件（已加入 `.gitignore`），每次启动自动同步，不需要手工维护；
 - 页面 HTML 支持 `@[strings/key]` 标签，渲染完成后自动替换；缺失 key 会保留原标签，便于排查；

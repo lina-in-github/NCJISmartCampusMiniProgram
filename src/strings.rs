@@ -209,6 +209,8 @@ pub fn stats() -> (usize, String) {
     (n, store.current.clone())
 }
 
+/// 解析字符串文件：每个条目由一行 `key:` 和紧随其后的一行内容组成。
+/// 空行与 `#` 注释可以出现在条目之间。
 fn parse_text(text: &str, source: &str) -> Result<Vec<Entry>, String> {
     let raw: Vec<&str> = text
         .split('\n')
@@ -218,29 +220,15 @@ fn parse_text(text: &str, source: &str) -> Result<Vec<Entry>, String> {
     let mut i = 0usize;
     while i < raw.len() {
         let line = raw[i];
-        let trimmed = line.trim_start();
+        let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             i += 1;
             continue;
         }
-        if !trimmed.starts_with("name=") {
-            return Err(format!("{}:{}：条目必须以 name= 开头", source, i + 1));
-        }
-        let line = trimmed;
-        let lines_at = line
-            .find(" lines=")
-            .ok_or_else(|| format!("{}:{}：缺少 lines=", source, i + 1))?;
-        let content_at = line
-            .find(" content=")
-            .ok_or_else(|| format!("{}:{}：缺少 content=", source, i + 1))?;
-        if lines_at >= content_at {
-            return Err(format!(
-                "{}:{}：lines= 必须位于 content= 之前",
-                source,
-                i + 1
-            ));
-        }
-        let name = line[5..lines_at].trim();
+        let name = trimmed
+            .strip_suffix(':')
+            .ok_or_else(|| format!("{}:{}：条目必须以 `key:` 开头", source, i + 1))?;
+        let name = name.trim_end();
         if name.is_empty()
             || !name
                 .chars()
@@ -248,29 +236,15 @@ fn parse_text(text: &str, source: &str) -> Result<Vec<Entry>, String> {
         {
             return Err(format!("{}:{}：非法 key `{name}`", source, i + 1));
         }
-        let n: usize = line[lines_at + 7..content_at]
-            .trim()
-            .parse()
-            .map_err(|_| format!("{}:{}：lines= 必须是数字", source, i + 1))?;
-        let inline = &line[content_at + 9..];
         i += 1;
-
-        let mut content_lines: Vec<String> = Vec::new();
-        if !inline.is_empty() {
-            content_lines.push(inline.to_string());
-        }
-        let need = n.saturating_sub(content_lines.len());
-        if i + need > raw.len() {
-            return Err(format!("{}:{}：声明了 {} 行内容，但文件不足", source, i, n));
-        }
-        for _ in 0..need {
-            content_lines.push(raw[i].to_string());
-            i += 1;
+        if i >= raw.len() {
+            return Err(format!("{}:{}：key `{name}` 缺少内容行", source, i));
         }
         entries.push(Entry {
             name: name.to_string(),
-            content: content_lines.join("\n"),
+            content: raw[i].to_string(),
         });
+        i += 1;
     }
     Ok(entries)
 }
@@ -357,13 +331,16 @@ mod tests {
 
     #[test]
     fn parse_format_and_tags() {
-        let src = "# comment\nname=hello lines=0 content=你好\nname=multi lines=2 content=\nabc\ndef\nname=blank lines=1 content=\n\nname=fmt lines=0 content=值为 {} 和 {}\n";
+        let src =
+            "# comment\n hello:\n你好\n# between\nsecond:\nabc\nblank:\n\nfmt:\n值为 {} 和 {}  \n";
         let entries = parse_text(src, "test").unwrap();
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].name, "hello");
         assert_eq!(entries[0].content, "你好");
-        assert_eq!(entries[1].content, "abc\ndef");
+        assert_eq!(entries[1].name, "second");
+        assert_eq!(entries[1].content, "abc");
         assert_eq!(entries[2].content, "");
+        assert_eq!(entries[3].content, "值为 {} 和 {}  ");
         assert_eq!(
             format_template("值为 {} 和 {}", &["A".into(), "B".into()]),
             "值为 A 和 B"
@@ -462,7 +439,8 @@ mod tests {
     #[test]
     fn parser_rejects_bad_entries() {
         assert!(parse_text("hello=world\n", "t").is_err());
-        assert!(parse_text("name=x lines=2 content=\nonly-one", "t").is_err());
-        assert!(parse_text("name=bad/key lines=0 content=x\n", "t").is_err());
+        assert!(parse_text("lonely:", "t").is_err());
+        assert!(parse_text("bad/key:\nx\n", "t").is_err());
+        assert!(parse_text("with space:\nx\n", "t").is_err());
     }
 }
