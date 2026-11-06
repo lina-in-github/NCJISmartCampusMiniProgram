@@ -18,6 +18,7 @@ import argparse
 import json
 import re
 import sys
+from html import unescape
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -115,7 +116,7 @@ def parse_source(text: str, path: Path) -> tuple[list[str], list[tuple[list[str]
             header = leading
             leading = []
             seen_key = True
-        entries.append((leading, key, value))
+        entries.append((leading, key, unescape(value)))
 
     if not entries:
         raise ValueError(f"{path}: 没有任何字符串条目")

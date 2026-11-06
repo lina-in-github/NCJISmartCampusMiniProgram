@@ -54,13 +54,13 @@ account_display_name:
 account_first_use:
 第一次使用？创建账号并绑定班级密钥
 account_key_note:
-密钥可以之后在账号中心添加。每个密钥只对应一个班级。
+密钥可以之后在账号中心添加
 account_key_optional:
 可选，稍后也可在账号内添加
 account_login:
 登录账号
 account_login_desc:
-使用用户名与密码登录；密码在本机派生密钥，不会发送到服务器。
+使用用户名与密码登录
 account_logout:
 退出账号中心
 account_member_generate:
@@ -72,13 +72,13 @@ account_member_generated_toast:
 account_member_hint:
 生成密钥时会使用该身份所在班级。
 account_member_note:
-生成后密钥仅展示一次，请复制后交给对应成员。成员可在账号中心绑定该密钥。
+生成后密钥仅展示一次，请复制后交给对应成员令其在账号中心绑定该密钥。
 account_member_quantity:
 生成数量
 account_member_role:
 成员类型
 account_mode_abstract_hint:
-抽象类别不能直接发布，只能被继承；抽象属性不随继承传递，因此需要在这里显式声明。
+抽象类别不能直接发布，只能被继承；抽象属性不随继承传递。
 account_mode_create:
 新增征集模式
 account_mode_created:
@@ -120,7 +120,7 @@ account_mode_name:
 account_mode_name_placeholder:
 例如：数学选择题作业
 account_mode_visibility_inherit_hint:
-勾选后会作为父模式加入 extendModes；例如继承 hidden 即隐藏征集，继承 separate list 即单独列出。可见性会沿继承链生效。
+勾选后会作为继承父模式；例如继承 hidden 即隐藏征集，继承 separate list 即单独列出。可见性会沿继承链生效。
 account_my_auths:
 我的班级身份
 account_new_password:
@@ -134,13 +134,13 @@ account_not_admin_note:
 account_password:
 密码
 account_password_local:
-密码只在本机派生登录私钥，正常登录不会发送到服务器；旧账号首次登录会做一次公钥迁移。
+密码只在本机派生登录私钥，正常登录不会发送到服务器；
 account_refresh_key:
 轮换密钥
 account_refresh_key_confirm:
 确认轮换
 account_refresh_key_desc:
-用于密钥泄漏处置。验证账号密码后，将为该身份生成新密钥；新密钥继承该身份的全部班级数据，旧密钥立即失效。
+验证账号密码后，将为该身份生成新密钥；新密钥继承该身份的全部班级数据，旧密钥立即失效。
 account_refresh_key_done_desc:
 旧密钥已立即失效。请复制并妥善保存新密钥；完成后页面会刷新身份列表。
 account_refresh_key_done_title:
@@ -186,7 +186,7 @@ account_username:
 account_view_mode:
 显示模式（学生身份）
 account_view_mode_hint:
-学生身份可在「学生视角（我）」与「家长视角（孩子）」之间切换，只影响界面文案；能看到的数据完全相同。
+学生身份可在「学生视角（我）」与「家长视角（孩子）」之间切换，只影响界面文案。
 answer_sheet_all_hint:
 提交后自动批改，得分与正误会显示在下方列表的提交里。
 answer_sheet_all_required:
@@ -212,15 +212,15 @@ answer_sheet_right:
 answer_sheet_submit:
 提交并自动批改
 answer_sheet_tip:
-提示：答案在提交时会由浏览器自动批改，结果追加在提交内容末尾；可以重复作答，每次提交都会单独保存。
+提示：答案在提交时会自动批改；可以重复作答，每次提交都会单独保存。
 avatar_fallback:
 校
 brand_footer:
-智慧校园 · Campus OS
+智慧校园 
 brand_tagline:
-Campus OS
+Smart Campus 
 brand_tagline_upper:
-CAMPUS OS
+Smart Campus
 common_account_desc:
 管理身份、密钥与偏好设置
 common_attachment:
@@ -457,17 +457,17 @@ home_empty_submissions_title:
 home_empty_uploads_title:
 暂时没有需要关注的提交
 home_eyebrow_admin:
-ADMIN CONSOLE
+权限：管理员
 home_eyebrow_parent:
-PARENT SPACE
+权限：学生家长
 home_eyebrow_student:
-STUDENT SPACE
+权限：学生
 home_eyebrow_teacher:
-TEACHER DESK
+权限：教师
 home_float_admin:
-班级动态
+最近提交
 home_float_admin_sub:
-全部内容尽在掌握
+点击即可查看回复
 home_float_default_sub:
 点击即可查看回复
 home_float_parent:
@@ -481,7 +481,7 @@ home_float_self:
 home_parent_hint:
 孩子的最近提交
 home_pending_hint:
-优先显示你发布的征集中的待回复提交
+此处优先显示你发布的征集中的待回复提交
 home_recent_admin:
 最近的提交
 home_recent_parent:
@@ -521,7 +521,7 @@ layout_brand_home:
 layout_class_space:
 班级空间
 layout_current_class:
-CURRENT CLASS
+当前班级
 layout_main_nav:
 主导航
 layout_space_nav:
@@ -581,21 +581,21 @@ login_feature_reply:
 login_feature_session:
 安全会话
 login_footer_note:
-家长与学生共用孩子的学生密钥 · 请勿转发密钥
+家长与学生共用孩子的学生密钥 tips:请勿转发密钥
 login_hero_account_desc:
-可绑定多个班级密钥，随时切换身份。在账号中心查看自己拥有的全部身份。
+tips:在账号中心添加更多身份密钥
 login_hero_account_title:
-一个账号，可连接多个班级身份
+账号中心
 login_hero_eyebrow:
-SMART CAMPUS
+智慧校园
 login_hero_login_desc:
-面向班级的简单管理工具
+面向班级事务处理的管理工具
 login_hero_login_title:
-面向班级的简单管理工具
+面向班级事务处理的管理工具
 login_hero_year:
 2026
 login_key_hint:
-每个密钥只对应一个班级。需要切换班级时，请切换到该班级的密钥。
+tips:每个密钥只对应一个班级。需要切换班级时，请切换到该班级的密钥
 login_key_label:
 班级密钥
 login_other_identity:
@@ -603,15 +603,15 @@ login_other_identity:
 login_parent_desc:
 查看孩子的提交、回复与班级征集
 login_parent_page_desc:
-使用孩子的学生密钥进入班级
+使用孩子的密钥进入班级
 login_parent_page_title:
 家长登录
 login_placeholder:
-例如 SC-STU-XXXXXXXX
+如 SC-STU-XXXXXXXX
 login_placeholder_admin:
-例如 SC-ADM-XXXXXXXX
+如 SC-ADM-XXXXXXXX
 login_placeholder_teacher:
-例如 SC-TEA-XXXXXXXX
+如 SC-TEA-XXXXXXXX
 login_student_page_desc:
 使用学生密钥进入班级
 login_student_page_title:
@@ -635,13 +635,13 @@ modes_created_label:
 modes_delete:
 删除类型
 modes_delete_confirm_message:
-确定删除类型「{}」？只会删除类型本身，不会删除已发布的征集。
+确定删除类型「{}」？这只会删除类型本身，不会删除已发布的征集。
 modes_delete_confirm_title:
 删除征集类型
 modes_delete_failed:
 删除失败，请稍后重试
 modes_delete_inherited:
-该类型仍被其他类型继承，请先删除子类型
+该类型仍被其他类型继承，无法安全删除。请先删除子类型
 modes_deleted:
 已删除类型「{}」
 modes_empty_desc:
@@ -667,11 +667,11 @@ modes_page_sub:
 modes_page_title:
 征集类型管理
 modes_tip1:
-1. 只能删除本班自定义类型；内置类型不可删除。
+tips:
 modes_tip2:
-2. 类型被其他类型继承时，请先删除子类型。
+1. 只能删除未被继承的本班自定义类型；内置类型与已被继承的类型不可删除。
 modes_tip3:
-3. 类型仍被征集引用时默认拒绝删除；确认强制删除后，历史征集保留原类型与行为。
+2. 类型仍被征集引用时默认拒绝删除；确认强制删除后，历史征集保留原类型与行为。
 
 mp_back:
 返回
@@ -680,7 +680,7 @@ mp_choose_files:
 选择附件
 
 mp_class_id_hint:
-创建班级后会自动填入；/api 没有「查询班级 ID」的接口，也可以向管理员索取 cls_ 开头的 ID。
+创建班级后会自动填入
 
 mp_class_id_label:
 班级 ID
@@ -697,7 +697,7 @@ mp_delete_reply:
 删除回复
 
 mp_demo_accounts:
-演示账号：admin / admin123 · teacher / teacher123 · student / student123
+示例：student/student123
 
 mp_deriving_key:
 正在本机派生登录密钥（首次登录需数秒），请稍候…
@@ -762,7 +762,7 @@ mp_home_title_parent:
 您好，{}的家长
 
 mp_local_account_note:
-在线模式下账号使用服务器的挑战登录，密码只在本机派生密钥、不会发送；离线模式由本机模拟同一套接口。账号偏好与身份绑定仍保存在本机。
+tips:账号偏好与身份绑定仍保存在本机。
 
 mp_local_hint:
 在线模式可读取个人全部提交（/api/my-uploads）与个人发布的征集（/api/my-submissions）；离线模拟同样支持。
@@ -770,7 +770,7 @@ mp_local_hint:
 mp_mode_abstract:
 抽象类别（只能继承）
 mp_mode_abstract_hint:
-抽象类别不能直接发布，只能被继承；抽象属性不随继承传递，因此需要显式开启。
+抽象类别不能直接发布，只能被继承；抽象属性不随继承传递。
 mp_mode_create:
 新增征集模式
 mp_mode_created:
@@ -802,10 +802,10 @@ mp_mode_flags_label:
 mp_mode_form_title:
 新增征集模式
 mp_mode_hint:
-管理员可为所选班级新增自定义征集模式；可见性通过继承定义，例如 hidden / teacher only / admin only / invisible / separate list。
+为所选班级新增自定义征集模式需要填写类型的原始名称，<br/>例： survey / answer sheet / hidden / teacher only / admin only / invisible / separate list。
 
 mp_mode_inherit_visibility:
-继承可见性类别（写入 extendModes）
+继承可见性类别
 mp_mode_name_label:
 模式名称
 mp_mode_name_required:
@@ -815,13 +815,13 @@ mp_mode_offline:
 离线模拟
 
 mp_mode_offline_desc:
-不联网：本地按同一套 /api 契约应答，内置演示班级、征集与提交数据。
+不联网：本地按同一套 /api 契约应答，内置演示班级、征集与提交数据。（已弃用）
 
 mp_mode_online:
 在线模式
 
 mp_mode_online_desc:
-所有请求发往真实服务器（POST {}/api/*），请求体与响应体与 Rust 服务完全同构。
+所有请求发往真实服务器（POST {}/api/*）（推荐）
 mp_modes_count:
 {} 个类型
 mp_modes_created_label:
@@ -878,12 +878,12 @@ mp_pending_title:
 我发布的待回复提交
 
 mp_reply_delete_note:
-管理员可逐条删除回复；删除前会弹出确认框并显示回复信息。
+tips:The cake is a lie
 mp_reply_id:
 回复编号
 
 mp_required_domain_tip:
-真机调试前，请在开发者工具中勾选「不校验合法域名…」，或在小程序后台配置该服务器域名（仅支持 https）。
+tips:Thanks for all the fish
 
 mp_reset_data:
 重置离线模拟数据
@@ -970,7 +970,7 @@ new_deadline_label:
 new_desc_label:
 说明
 new_desc_placeholder:
-写清楚提交要求、格式与注意事项，学生会在详情页看到这段说明。
+学生会在详情页看到这段说明
 new_mode_group:
 班级自定义模式
 new_mode_group_special:
@@ -978,11 +978,11 @@ new_mode_group_special:
 new_mode_hint:
 本班已定义 {} 个自定义征集模式，可在类型中选择。
 new_mode_hint_special:
-可选择隐藏 / 仅教师 / 仅管理员 / 不显示等可见性类别；「单独列出征集」是抽象类别，只能被继承。
+可选择隐藏 / 仅教师 / 仅管理员 / 不显示 / 问卷等类别；「单独列出征集」是抽象类别，只能被继承。
 new_name_label:
 征集名称
 new_name_placeholder:
-例如：函数与导数 · 周末练习
+例如：函数与导数练习
 new_no_deadline:
 不设置截止时间
 new_page_title:
@@ -992,29 +992,29 @@ new_publish_identity:
 new_subtitle:
 征集会立即出现在班级空间，学生与家长可以查看并提交。
 new_tip1:
-1. 名称尽量具体，包含学科、主题或活动名称。
+---
 new_tip2:
-2. 截止时间按北京时间显示，学生端会实时提示剩余时间。
+1. 截止时间按北京时间显示，学生端会实时提示剩余时间。
 new_tip3:
-3. 学生可多次上传；老师可以在提交详情中逐条回复。
+2. 学生可多次上传；老师可以在提交详情中逐条回复。
 new_tip4:
-4. 发布后管理员可以删除该征集，请确认内容无误。
+---
 new_tip_answer_sheet:
-6. 类型选「答题卡」时，每题都必须写 data-answer 与 data-score（如 &lt;input id=&quot;form_q1&quot; data-answer=&quot;2&quot; data-score=&quot;5&quot;/&gt;），提交后由前端自动批改并计分。
+6. 类型选「答题卡」时，每题的格式如 <input id="form_q1" data-answer="2" data-score="5"/>（必须写 id（以"form_"开头）、data-answer 与 data-score），提交后自动批改并计分。
 new_tip_survey:
-5. 类型选「问卷」时，简介里可用 &lt;input id=&quot;form_x&quot; required/&gt;、&lt;checkbox id=&quot;form_y&quot; value=&quot;选项&quot;/&gt;、&lt;switch id=&quot;form_z&quot;/&gt; 定义题目，id 必须以 form_ 开头。
+5. 类型选「问卷」时，简介里可用 <input id="form_x" required/>、<checkbox id="form_y" value="选项"/>、<switch id="form_z"/> 定义题目，id 必须以 form_ 开头。
 new_tips_title:
-发布小贴士
+tips:
 new_type_label:
 类型
 new_type_manual:
 手动输入
 new_type_manual_hint:
-勾选后直接使用输入的原始名称，不再使用下拉选择；也可在账号中心把常用类型创建为可复用模式。
+勾选后直接使用输入的原始名称，不再使用下拉选择；
 new_type_manual_name:
 征集类型原始名称
 new_type_manual_placeholder:
-输入未预置的征集类型名称
+输入征集类型名称
 page_home:
 首页
 page_modes:
@@ -1068,9 +1068,9 @@ student_no_short:
 submission_all_delete:
 删除征集
 submission_all_empty_parent:
-孩子还没有为这个征集上传内容。
+孩子还没有提交到这个征集
 submission_all_empty_self:
-你还没有为这个征集上传内容。
+你还没有提交到这个征集
 submission_all_empty_staff:
 学生提交后会显示在这里。
 submission_all_export:
@@ -1110,7 +1110,7 @@ submission_mine:
 submission_notice_detail:
 公示详情
 submission_notice_no_upload:
-此内容为公示版，仅展示详情，不开放作业提交。
+此内容为公示版
 submission_notice_pinned:
 公示置顶
 submissions_child_not_submitted:
@@ -1122,13 +1122,13 @@ submissions_count_own:
 submissions_count_staff:
 {} 份提交
 submissions_empty_desc:
-老师发布征集后，会在这里展示。你提交过的内容也会自动关联到对应征集。
+老师发布征集后，会在这里展示。
 submissions_empty_mine_desc:
 你发布后的征集会显示在这里。
 submissions_empty_mine_title:
 还没有发布过征集
 submissions_hide_hiddens:
-隐藏已隐藏
+隐藏隐藏项
 submissions_not_submitted:
 尚未提交
 submissions_page_sub:
@@ -1142,7 +1142,7 @@ submissions_publish_first:
 submissions_scope_mine:
 我发布的
 submissions_show_hiddens:
-显示隐藏
+显示隐藏项
 submissions_tab_all:
 全部
 submissions_tabs_label:
@@ -1164,7 +1164,7 @@ survey_fill:
 survey_form_page_title:
 填写问卷「{}」
 survey_form_subtitle:
-按简介中的题目填写，提交后由系统自动整理答案。
+填写简介中的题目
 survey_no_fields:
 这份问卷暂时没有可填写的题目。
 survey_submit:
@@ -1292,7 +1292,7 @@ upload_back_submission:
 upload_delete:
 删除本次提交
 upload_form_desc_placeholder:
-补充说明、解题思路、遇到的问题……
+补充说明、解题思路……
 upload_form_drop:
 拖拽文件到这里，或 <span>点击选择文件</span>
 upload_form_drop_hint:
@@ -1316,9 +1316,9 @@ upload_form_publisher:
 upload_form_submission_info:
 征集信息
 upload_form_subtitle:
-支持图片、PDF 与常见文档，单个上传最多 8 个附件、总计约 18MB。
+支持图片、PDF 与常见文档，单个上传最多 8 个附件
 upload_form_tip:
-提示：截止后仍可补交，老师会看到每次提交的时间。
+提示：截止后仍可补交
 upload_form_title_hint:
 给这份提交一个清晰的名字，方便老师批阅。
 upload_form_title_label:
@@ -1364,7 +1364,7 @@ upload_reply_empty_student:
 upload_reply_empty_title:
 还没有回复
 upload_reply_note:
-回复会立即展示给提交人和家长
+回复会展示给提交人和家长
 upload_reply_only_staff:
 只有老师和管理员可以回复这份提交。
 upload_reply_placeholder:
@@ -1378,7 +1378,7 @@ upload_reupload:
 upload_tip_staff:
 提示：回复发出后不可编辑，请确认内容后提交。
 upload_tip_student:
-提示：你可以在截止后补交，老师会看到每次提交的时间。
+提示：你可以在截止后补交
 upload_view_submission:
 查看征集
 uploads_count_own:
